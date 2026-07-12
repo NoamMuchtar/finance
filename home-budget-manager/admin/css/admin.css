@@ -1,0 +1,94 @@
+/* Home Budget Manager - Admin Styles */
+#hbm-admin-app {
+    direction: rtl;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    max-width: 1200px;
+    padding: 20px;
+}
+
+#hbm-admin-app .hbm-admin-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+#hbm-admin-app h1 {
+    font-size: 24px;
+    color: #1a1a2e;
+}
+
+#hbm-admin-app .hbm-admin-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+    margin-bottom: 20px;
+    border: 1px solid #e9ecef;
+}
+
+#hbm-admin-app .hbm-admin-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+#hbm-admin-app .hbm-stat-box {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    color: #fff;
+    padding: 20px;
+    border-radius: 12px;
+    text-align: center;
+}
+
+#hbm-admin-app .hbm-stat-box h3 {
+    margin: 0 0 8px;
+    font-size: 13px;
+    opacity: 0.9;
+}
+
+#hbm-admin-app .hbm-stat-box .amount {
+    font-size: 28px;
+    font-weight: 700;
+}
+
+#hbm-admin-app table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+#hbm-admin-app table th {
+    background: #f8f9fa;
+    padding: 12px 16px;
+    text-align: right;
+    font-size: 12px;
+    font-weight: 700;
+    color: #6c757d;
+    border-bottom: 2px solid #e9ecef;
+}
+
+#hbm-admin-app table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid #e9ecef;
+    font-size: 14px;
+}
+
+#hbm-admin-app .btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+#hbm-admin-app .btn-primary {
+    background: linear-gradient(135deg, #4facfe, #00f2fe);
+    color: #fff;
+}
+
+#hbm-admin-app .btn-danger {
+    background: #ff5252;
+    color: #fff;
+}
