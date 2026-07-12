@@ -20,19 +20,38 @@
     }
 
     function apiRequest(endpoint, method, data) {
+        method = method || 'GET';
         const opts = {
-            method: method || 'GET',
-            headers: { 'X-WP-Nonce': NONCE, 'Content-Type': 'application/json' },
+            method: method,
+            headers: { 'X-WP-Nonce': NONCE },
+            credentials: 'same-origin',
         };
-        if (data) opts.body = JSON.stringify(data);
 
         let url = API + endpoint;
+
         if (method === 'GET' && data) {
-            const params = new URLSearchParams(data);
+            var params = new URLSearchParams();
+            Object.keys(data).forEach(function (key) {
+                if (data[key] !== null && data[key] !== undefined) {
+                    params.append(key, data[key]);
+                }
+            });
             url += '?' + params.toString();
+        } else if (method !== 'GET' && data) {
+            opts.headers['Content-Type'] = 'application/json';
+            opts.body = JSON.stringify(data);
         }
 
-        return fetch(url, opts).then(function (r) { return r.json(); });
+        return fetch(url, opts).then(function (r) {
+            return r.json();
+        }).then(function (json) {
+            if (json.code && json.message) {
+                console.error('HBM API Error:', json.message);
+                alert('שגיאה: ' + json.message);
+                return Promise.reject(json);
+            }
+            return json;
+        });
     }
 
     function formatCurrency(amount) {
@@ -282,17 +301,21 @@
                 amount: parseFloat(form.amount.value),
                 source: form.source.value,
                 start_date: form.start_date.value,
-                end_date: form.end_date.value || null,
                 is_recurring: form.is_recurring.checked ? 1 : 0,
             };
+            if (form.end_date.value) {
+                payload.end_date = form.end_date.value;
+            }
 
             var method = isEdit ? 'PUT' : 'POST';
             var endpoint = isEdit ? 'income/' + editData.id : 'income';
-            apiRequest(endpoint, method, payload).then(function () {
-                closeModal();
-                loadIncome();
-                loadDashboard();
-            });
+            apiRequest(endpoint, method, payload).then(function (response) {
+                if (response && response.id) {
+                    closeModal();
+                    loadIncome();
+                    loadDashboard();
+                }
+            }).catch(function () {});
         });
     }
 
@@ -439,11 +462,13 @@
 
             var method = isEdit ? 'PUT' : 'POST';
             var endpoint = isEdit ? 'expenses/' + editData.id : 'expenses';
-            apiRequest(endpoint, method, payload).then(function () {
-                closeModal();
-                loadExpenses();
-                loadDashboard();
-            });
+            apiRequest(endpoint, method, payload).then(function (response) {
+                if (response && response.id) {
+                    closeModal();
+                    loadExpenses();
+                    loadDashboard();
+                }
+            }).catch(function () {});
         });
     }
 

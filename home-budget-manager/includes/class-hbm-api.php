@@ -75,17 +75,30 @@ class HBM_API {
         global $wpdb;
         $user_id = get_current_user_id();
 
+        $params = $request->get_json_params();
+        if (empty($params)) {
+            $params = $request->get_params();
+        }
+
         $data = [
             'user_id' => $user_id,
-            'title' => sanitize_text_field($request->get_param('title')),
-            'amount' => floatval($request->get_param('amount')),
-            'source' => sanitize_text_field($request->get_param('source') ?? ''),
-            'is_recurring' => intval($request->get_param('is_recurring') ?? 1),
-            'start_date' => sanitize_text_field($request->get_param('start_date')),
-            'end_date' => $request->get_param('end_date') ? sanitize_text_field($request->get_param('end_date')) : null,
+            'title' => sanitize_text_field($params['title'] ?? ''),
+            'amount' => floatval($params['amount'] ?? 0),
+            'source' => sanitize_text_field($params['source'] ?? ''),
+            'is_recurring' => intval($params['is_recurring'] ?? 1),
+            'start_date' => sanitize_text_field($params['start_date'] ?? date('Y-m-d')),
         ];
 
-        $wpdb->insert("{$wpdb->prefix}hbm_income", $data);
+        if (!empty($params['end_date'])) {
+            $data['end_date'] = sanitize_text_field($params['end_date']);
+        }
+
+        $result = $wpdb->insert("{$wpdb->prefix}hbm_income", $data);
+
+        if ($result === false) {
+            return new WP_Error('db_error', 'שגיאה בשמירת הנתונים: ' . $wpdb->last_error, ['status' => 500]);
+        }
+
         $data['id'] = $wpdb->insert_id;
 
         return rest_ensure_response($data);
@@ -129,18 +142,15 @@ class HBM_API {
         $month_start = $month . '-01';
         $month_end = date('Y-m-t', strtotime($month_start));
 
-        $where = $wpdb->prepare(
-            "WHERE user_id = %d AND start_date <= %s",
-            $user_id,
-            $month_end
-        );
+        $where = $wpdb->prepare("WHERE user_id = %d", $user_id);
 
         $where .= $wpdb->prepare(
-            " AND (end_date IS NULL OR end_date >= %s)",
+            " AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)",
+            $month_end,
             $month_start
         );
 
-        if ($type) {
+        if ($type && $type !== 'all') {
             $where .= $wpdb->prepare(" AND type = %s", $type);
         }
 
@@ -164,19 +174,33 @@ class HBM_API {
         global $wpdb;
         $user_id = get_current_user_id();
 
-        $type = sanitize_text_field($request->get_param('type'));
+        $params = $request->get_json_params();
+        if (empty($params)) {
+            $params = $request->get_params();
+        }
+
+        $type = sanitize_text_field($params['type'] ?? 'regular');
+        $title = sanitize_text_field($params['title'] ?? '');
+        $payee = sanitize_text_field($params['payee'] ?? '');
+        $description = sanitize_text_field($params['description'] ?? '');
+        $category = sanitize_text_field($params['category'] ?? '');
+        $amount = floatval($params['amount'] ?? 0);
+        $start_date = sanitize_text_field($params['start_date'] ?? date('Y-m-d'));
+
+        if (empty($title) || empty($category) || $amount <= 0) {
+            return new WP_Error('missing_data', 'חסרים נתונים חובה (שם, קטגוריה, סכום)', ['status' => 400]);
+        }
 
         $data = [
             'user_id' => $user_id,
             'type' => $type,
-            'title' => sanitize_text_field($request->get_param('title')),
-            'payee' => sanitize_text_field($request->get_param('payee') ?? ''),
-            'description' => sanitize_text_field($request->get_param('description') ?? ''),
-            'category' => sanitize_text_field($request->get_param('category')),
-            'amount' => floatval($request->get_param('amount')),
+            'title' => $title,
+            'payee' => $payee,
+            'description' => $description,
+            'category' => $category,
+            'amount' => $amount,
             'is_recurring' => 0,
-            'start_date' => sanitize_text_field($request->get_param('start_date')),
-            'end_date' => $request->get_param('end_date') ? sanitize_text_field($request->get_param('end_date')) : null,
+            'start_date' => $start_date,
         ];
 
         switch ($type) {
@@ -185,17 +209,22 @@ class HBM_API {
                 break;
 
             case 'installment':
-                $data['total_installments'] = intval($request->get_param('total_installments'));
-                $data['remaining_installments'] = $data['total_installments'];
-                $data['installment_amount'] = floatval($request->get_param('installment_amount') ?: ($data['amount'] / $data['total_installments']));
-                $end_date = date('Y-m-d', strtotime($data['start_date'] . " +{$data['total_installments']} months"));
-                $data['end_date'] = $end_date;
+                $total = intval($params['total_installments'] ?? 0);
+                if ($total <= 0) $total = 1;
+                $data['total_installments'] = $total;
+                $data['remaining_installments'] = $total;
+                $inst_amount = floatval($params['installment_amount'] ?? 0);
+                $data['installment_amount'] = $inst_amount > 0 ? $inst_amount : ($amount / $total);
+                $data['end_date'] = date('Y-m-d', strtotime($start_date . " +{$total} months"));
                 break;
 
             case 'loan':
-                $data['monthly_return'] = floatval($request->get_param('monthly_return'));
-                $data['loan_end_date'] = sanitize_text_field($request->get_param('loan_end_date'));
-                $data['end_date'] = $data['loan_end_date'];
+                $data['monthly_return'] = floatval($params['monthly_return'] ?? 0);
+                $loan_end = sanitize_text_field($params['loan_end_date'] ?? '');
+                if ($loan_end) {
+                    $data['loan_end_date'] = $loan_end;
+                    $data['end_date'] = $loan_end;
+                }
                 break;
 
             case 'saving':
@@ -203,7 +232,12 @@ class HBM_API {
                 break;
         }
 
-        $wpdb->insert("{$wpdb->prefix}hbm_expenses", $data);
+        $result = $wpdb->insert("{$wpdb->prefix}hbm_expenses", $data);
+
+        if ($result === false) {
+            return new WP_Error('db_error', 'שגיאה בשמירת הנתונים: ' . $wpdb->last_error, ['status' => 500]);
+        }
+
         $data['id'] = $wpdb->insert_id;
 
         return rest_ensure_response($data);
