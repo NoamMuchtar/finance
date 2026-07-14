@@ -15,8 +15,8 @@ class HBM_API {
         ]);
 
         register_rest_route($namespace, '/income/(?P<id>\d+)', [
-            ['methods' => 'PUT', 'callback' => [__CLASS__, 'update_income'], 'permission_callback' => [__CLASS__, 'check_auth']],
-            ['methods' => 'DELETE', 'callback' => [__CLASS__, 'delete_income'], 'permission_callback' => [__CLASS__, 'check_auth']],
+            ['methods' => WP_REST_Server::EDITABLE, 'callback' => [__CLASS__, 'update_income'], 'permission_callback' => [__CLASS__, 'check_auth']],
+            ['methods' => WP_REST_Server::DELETABLE, 'callback' => [__CLASS__, 'delete_income'], 'permission_callback' => [__CLASS__, 'check_auth']],
         ]);
 
         register_rest_route($namespace, '/expenses', [
@@ -25,8 +25,8 @@ class HBM_API {
         ]);
 
         register_rest_route($namespace, '/expenses/(?P<id>\d+)', [
-            ['methods' => 'PUT', 'callback' => [__CLASS__, 'update_expense'], 'permission_callback' => [__CLASS__, 'check_auth']],
-            ['methods' => 'DELETE', 'callback' => [__CLASS__, 'delete_expense'], 'permission_callback' => [__CLASS__, 'check_auth']],
+            ['methods' => WP_REST_Server::EDITABLE, 'callback' => [__CLASS__, 'update_expense'], 'permission_callback' => [__CLASS__, 'check_auth']],
+            ['methods' => WP_REST_Server::DELETABLE, 'callback' => [__CLASS__, 'delete_expense'], 'permission_callback' => [__CLASS__, 'check_auth']],
         ]);
 
         register_rest_route($namespace, '/budget-allocations', [
@@ -44,7 +44,7 @@ class HBM_API {
         ]);
 
         register_rest_route($namespace, '/categories/(?P<key>[a-z_]+)', [
-            ['methods' => 'DELETE', 'callback' => [__CLASS__, 'delete_category'], 'permission_callback' => [__CLASS__, 'check_auth']],
+            ['methods' => WP_REST_Server::DELETABLE, 'callback' => [__CLASS__, 'delete_category'], 'permission_callback' => [__CLASS__, 'check_auth']],
         ]);
     }
 
@@ -109,14 +109,22 @@ class HBM_API {
         $user_id = get_current_user_id();
         $id = intval($request->get_param('id'));
 
+        $params = $request->get_json_params();
+        if (empty($params)) {
+            $params = $request->get_params();
+        }
+
         $data = [
-            'title' => sanitize_text_field($request->get_param('title')),
-            'amount' => floatval($request->get_param('amount')),
-            'source' => sanitize_text_field($request->get_param('source') ?? ''),
-            'is_recurring' => intval($request->get_param('is_recurring') ?? 1),
-            'start_date' => sanitize_text_field($request->get_param('start_date')),
-            'end_date' => $request->get_param('end_date') ? sanitize_text_field($request->get_param('end_date')) : null,
+            'title' => sanitize_text_field($params['title'] ?? ''),
+            'amount' => floatval($params['amount'] ?? 0),
+            'source' => sanitize_text_field($params['source'] ?? ''),
+            'is_recurring' => intval($params['is_recurring'] ?? 1),
+            'start_date' => sanitize_text_field($params['start_date'] ?? date('Y-m-d')),
         ];
+
+        if (!empty($params['end_date'])) {
+            $data['end_date'] = sanitize_text_field($params['end_date']);
+        }
 
         $wpdb->update("{$wpdb->prefix}hbm_income", $data, ['id' => $id, 'user_id' => $user_id]);
 
@@ -248,22 +256,30 @@ class HBM_API {
         $user_id = get_current_user_id();
         $id = intval($request->get_param('id'));
 
+        $params = $request->get_json_params();
+        if (empty($params)) {
+            $params = $request->get_params();
+        }
+
         $data = [
-            'title' => sanitize_text_field($request->get_param('title')),
-            'payee' => sanitize_text_field($request->get_param('payee') ?? ''),
-            'description' => sanitize_text_field($request->get_param('description') ?? ''),
-            'category' => sanitize_text_field($request->get_param('category')),
-            'amount' => floatval($request->get_param('amount')),
+            'title' => sanitize_text_field($params['title'] ?? ''),
+            'payee' => sanitize_text_field($params['payee'] ?? ''),
+            'description' => sanitize_text_field($params['description'] ?? ''),
+            'category' => sanitize_text_field($params['category'] ?? ''),
+            'amount' => floatval($params['amount'] ?? 0),
         ];
 
-        $type = sanitize_text_field($request->get_param('type'));
+        $type = sanitize_text_field($params['type'] ?? '');
         if ($type === 'installment') {
-            $data['total_installments'] = intval($request->get_param('total_installments'));
-            $data['installment_amount'] = floatval($request->get_param('installment_amount'));
+            $data['total_installments'] = intval($params['total_installments'] ?? 0);
+            $data['installment_amount'] = floatval($params['installment_amount'] ?? 0);
         } elseif ($type === 'loan') {
-            $data['monthly_return'] = floatval($request->get_param('monthly_return'));
-            $data['loan_end_date'] = sanitize_text_field($request->get_param('loan_end_date'));
-            $data['end_date'] = $data['loan_end_date'];
+            $data['monthly_return'] = floatval($params['monthly_return'] ?? 0);
+            $loan_end = sanitize_text_field($params['loan_end_date'] ?? '');
+            if ($loan_end) {
+                $data['loan_end_date'] = $loan_end;
+                $data['end_date'] = $loan_end;
+            }
         }
 
         $wpdb->update("{$wpdb->prefix}hbm_expenses", $data, ['id' => $id, 'user_id' => $user_id]);
@@ -296,7 +312,11 @@ class HBM_API {
     public static function save_allocations($request) {
         global $wpdb;
         $user_id = get_current_user_id();
-        $allocations = $request->get_param('allocations');
+        $params = $request->get_json_params();
+        if (empty($params)) {
+            $params = $request->get_params();
+        }
+        $allocations = $params['allocations'] ?? null;
 
         if (!is_array($allocations)) {
             return new WP_Error('invalid_data', 'נתונים לא תקינים', ['status' => 400]);
@@ -407,8 +427,12 @@ class HBM_API {
     }
 
     public static function add_category($request) {
-        $key = sanitize_key($request->get_param('key'));
-        $label = sanitize_text_field($request->get_param('label'));
+        $params = $request->get_json_params();
+        if (empty($params)) {
+            $params = $request->get_params();
+        }
+        $key = sanitize_key($params['key'] ?? '');
+        $label = sanitize_text_field($params['label'] ?? '');
 
         if (!$key || !$label) {
             return new WP_Error('missing_data', 'חסרים נתונים', ['status' => 400]);

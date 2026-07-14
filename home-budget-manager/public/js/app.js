@@ -12,6 +12,7 @@
     const TYPE_LABELS = { fixed: 'קבועה', installment: 'תשלומים', loan: 'הלוואה', saving: 'חיסכון', regular: 'שוטף' };
 
     function init() {
+        if (!document.getElementById('hbm-app')) return;
         setupNavigation();
         setupMonthSelector();
         setupTabs();
@@ -21,13 +22,13 @@
 
     function apiRequest(endpoint, method, data) {
         method = method || 'GET';
-        const opts = {
-            method: method,
+        var useMethod = method;
+        var opts = {
             headers: { 'X-WP-Nonce': NONCE },
             credentials: 'same-origin',
         };
 
-        let url = API + endpoint;
+        var url = API + endpoint;
 
         if (method === 'GET' && data) {
             var params = new URLSearchParams();
@@ -36,21 +37,39 @@
                     params.append(key, data[key]);
                 }
             });
-            url += '?' + params.toString();
+            var separator = url.indexOf('?') !== -1 ? '&' : '?';
+            url += separator + params.toString();
         } else if (method !== 'GET' && data) {
             opts.headers['Content-Type'] = 'application/json';
-            opts.body = JSON.stringify(data);
+            var bodyData = Object.assign({}, data);
+            if (method === 'PUT' || method === 'DELETE') {
+                useMethod = 'POST';
+                url += (url.indexOf('?') !== -1 ? '&' : '?') + '_method=' + method;
+            }
+            opts.body = JSON.stringify(bodyData);
+        } else if (method === 'PUT' || method === 'DELETE') {
+            useMethod = 'POST';
+            url += (url.indexOf('?') !== -1 ? '&' : '?') + '_method=' + method;
+            opts.headers['Content-Type'] = 'application/json';
+            opts.body = JSON.stringify({});
         }
 
+        opts.method = useMethod;
+
         return fetch(url, opts).then(function (r) {
+            if (!r.ok && r.status === 404) {
+                console.error('HBM: API endpoint not found:', url);
+                return { error: true, code: 'not_found', message: 'API endpoint not found' };
+            }
             return r.json();
         }).then(function (json) {
-            if (json.code && json.message) {
-                console.error('HBM API Error:', json.message);
-                alert('שגיאה: ' + json.message);
-                return Promise.reject(json);
+            if (json && json.code && json.message && json.code !== 'not_found') {
+                console.error('HBM API Error:', json.code, json.message);
             }
             return json;
+        }).catch(function (err) {
+            console.error('HBM fetch error:', err);
+            return { error: true, message: err.message };
         });
     }
 
@@ -164,6 +183,7 @@
     // Dashboard
     function loadDashboard() {
         apiRequest('dashboard', 'GET', { month: currentMonth }).then(function (data) {
+            if (!data || data.error || data.code) return;
             document.getElementById('hbm-total-income').textContent = formatCurrency(data.total_income);
             document.getElementById('hbm-total-expenses').textContent = formatCurrency(data.total_expenses);
             document.getElementById('hbm-remaining').textContent = formatCurrency(data.remaining);
