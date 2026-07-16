@@ -489,6 +489,10 @@
     background: var(--hbm-primary-light);
 }
 
+.hbm-card-allocated {
+    border-right-color: #8b5cf6;
+}
+
 .hbm-card-savings {
     border-right-color: var(--hbm-warning);
 }
@@ -522,6 +526,7 @@
 .hbm-card-income .hbm-amount { color: var(--hbm-success); }
 .hbm-card-expenses .hbm-amount { color: var(--hbm-danger); }
 .hbm-card-remaining .hbm-amount { color: var(--hbm-primary); }
+.hbm-card-allocated .hbm-amount { color: #8b5cf6; }
 .hbm-card-savings .hbm-amount { color: var(--hbm-warning); }
 
 .hbm-card-change {
@@ -1939,6 +1944,7 @@
 
     .hbm-card-income { border-top-color: var(--hbm-success); border-right: none; }
     .hbm-card-expenses { border-top-color: var(--hbm-danger); border-right: none; }
+    .hbm-card-allocated { border-top-color: #8b5cf6; border-right: none; }
     .hbm-card-remaining { border-top-color: var(--hbm-primary); border-right: none; }
     .hbm-card-savings { border-top-color: var(--hbm-warning); border-right: none; }
 

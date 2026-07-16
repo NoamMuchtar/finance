@@ -714,22 +714,26 @@ class HBM_API {
         ));
 
         $budget_status = [];
+        $total_allocated = 0;
         foreach ($allocations as $alloc) {
-            $spent = $expenses_by_category[$alloc->category] ?? 0;
+            $alloc_amount = floatval($alloc->amount);
+            $used = floatval($alloc->used_amount ?? 0);
+            $total_allocated += $alloc_amount;
             $budget_status[] = [
-                'category' => $alloc->category,
-                'allocated' => floatval($alloc->amount),
-                'spent' => $spent,
-                'remaining' => floatval($alloc->amount) - $spent,
+                'label' => $alloc->label ?? $alloc->category ?? '',
+                'allocated' => $alloc_amount,
+                'spent' => $used,
+                'remaining' => $alloc_amount - $used,
             ];
         }
 
-        $remaining = $total_income - $total_expenses;
+        $remaining = $total_income - $total_expenses - $total_allocated;
 
         return rest_ensure_response([
             'month' => $month,
             'total_income' => $total_income,
             'total_expenses' => $total_expenses,
+            'total_allocated' => $total_allocated,
             'remaining' => $remaining,
             'income_items' => $income,
             'expenses_by_category' => $expenses_by_category,

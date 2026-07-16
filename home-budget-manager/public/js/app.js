@@ -498,6 +498,8 @@
             if (totalExpensesEl) totalExpensesEl.textContent = formatCurrency(data.total_expenses);
             var remainingEl = document.getElementById('hbm-remaining');
             if (remainingEl) remainingEl.textContent = formatCurrency(data.remaining);
+            var totalAllocatedEl = document.getElementById('hbm-total-allocated');
+            if (totalAllocatedEl) totalAllocatedEl.textContent = formatCurrency(data.total_allocated || 0);
             var totalSavingsEl = document.getElementById('hbm-total-savings');
             if (totalSavingsEl) totalSavingsEl.textContent = formatCurrency(data.expenses_by_type.saving || 0);
 
@@ -697,10 +699,11 @@
         data.forEach(function (item) {
             var pct = item.allocated > 0 ? Math.min((item.spent / item.allocated) * 100, 100) : 0;
             var fillClass = pct >= 100 ? 'over-budget' : pct >= 80 ? 'warning' : '';
+            var label = item.label || getCategoryLabel(item.category || '');
 
             html += '<div class="hbm-budget-bar-item">' +
                 '<div class="hbm-budget-bar-header">' +
-                '<span class="hbm-budget-bar-label">' + getCategoryLabel(item.category) + '</span>' +
+                '<span class="hbm-budget-bar-label">' + escapeHtml(label) + '</span>' +
                 '<span class="hbm-budget-bar-values">' + formatCurrency(item.spent) + ' / ' + formatCurrency(item.allocated) +
                 ' (נותר: ' + formatCurrency(item.remaining) + ')</span>' +
                 '</div>' +
