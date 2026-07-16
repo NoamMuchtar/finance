@@ -5,7 +5,14 @@
     var NONCE = hbmData.nonce;
     var CATEGORIES = hbmData.categories;
 
-    var currentMonth = hbmData.currentMonth;
+    var currentMonth = (function() {
+        var now = new Date();
+        if (now.getDate() > 20) {
+            var next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+            return next.getFullYear() + '-' + String(next.getMonth() + 1).padStart(2, '0');
+        }
+        return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    })();
     var currentExpenseFilter = 'all';
 
     var creditCards = [];
@@ -214,10 +221,21 @@
         buildBizCcChargesNavItems();
     }
 
+    function getMonthDateRange(month) {
+        var parts = month.split('-');
+        var y = parseInt(parts[0]);
+        var m = parseInt(parts[1]);
+        var startDate = new Date(y, m - 2, 21);
+        var endDate = new Date(y, m - 1, 20);
+        return {
+            start_date: startDate.getFullYear() + '-' + String(startDate.getMonth() + 1).padStart(2, '0') + '-' + String(startDate.getDate()).padStart(2, '0'),
+            end_date: endDate.getFullYear() + '-' + String(endDate.getMonth() + 1).padStart(2, '0') + '-' + String(endDate.getDate()).padStart(2, '0')
+        };
+    }
+
     // Month Selector
     function setupMonthSelector() {
-        var el = document.getElementById('hbm-current-month');
-        if (el) el.textContent = getMonthLabel(currentMonth);
+        updateMonthDisplay();
 
         var prevBtn = document.getElementById('hbm-prev-month');
         if (prevBtn) {
@@ -233,12 +251,21 @@
         }
     }
 
+    function updateMonthDisplay() {
+        var el = document.getElementById('hbm-current-month');
+        if (el) el.textContent = getMonthLabel(currentMonth);
+        var rangeEl = document.getElementById('hbm-month-date-range');
+        if (rangeEl) {
+            var range = getMonthDateRange(currentMonth);
+            rangeEl.textContent = formatDate(range.start_date) + ' - ' + formatDate(range.end_date);
+        }
+    }
+
     function changeMonth(delta) {
         var parts = currentMonth.split('-');
         var date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1 + delta, 1);
         currentMonth = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0');
-        var el = document.getElementById('hbm-current-month');
-        if (el) el.textContent = getMonthLabel(currentMonth);
+        updateMonthDisplay();
 
         var activePage = document.querySelector('.hbm-sidebar-nav-item.active') || document.querySelector('.hbm-nav-links a.active');
         if (activePage) showPage(activePage.getAttribute('data-page'));
@@ -562,68 +589,9 @@
     }
 
     // ===================== Dashboard =====================
-    function getDashboardDateDefaults() {
-        var now = new Date();
-        var year = now.getFullYear();
-        var month = now.getMonth();
-        var startDate = new Date(year, month - 1, 21);
-        var endDate = new Date(year, month, 20);
-        return {
-            start_date: startDate.getFullYear() + '-' + String(startDate.getMonth() + 1).padStart(2, '0') + '-' + String(startDate.getDate()).padStart(2, '0'),
-            end_date: endDate.getFullYear() + '-' + String(endDate.getMonth() + 1).padStart(2, '0') + '-' + String(endDate.getDate()).padStart(2, '0')
-        };
-    }
-
-    function setupDashboardDateControls() {
-        var startEl = document.getElementById('hbm-dashboard-start-date');
-        var endEl = document.getElementById('hbm-dashboard-end-date');
-        if (!startEl || !endEl) return;
-
-        var defaults = getDashboardDateDefaults();
-        if (!startEl.value) startEl.value = defaults.start_date;
-        if (!endEl.value) endEl.value = defaults.end_date;
-
-        var applyBtn = document.getElementById('hbm-dashboard-date-apply');
-        if (applyBtn) {
-            applyBtn.addEventListener('click', function () {
-                loadDashboardData();
-            });
-        }
-
-        var nextBtn = document.getElementById('hbm-dashboard-date-next');
-        if (nextBtn) {
-            nextBtn.addEventListener('click', function () {
-                var curEnd = new Date(endEl.value);
-                var nextStart = new Date(curEnd.getFullYear(), curEnd.getMonth(), 21);
-                var nextEnd = new Date(curEnd.getFullYear(), curEnd.getMonth() + 1, 20);
-                startEl.value = formatDateISO(nextStart);
-                endEl.value = formatDateISO(nextEnd);
-                loadDashboardData();
-            });
-        }
-
-        var resetBtn = document.getElementById('hbm-dashboard-date-reset');
-        if (resetBtn) {
-            resetBtn.addEventListener('click', function () {
-                var defs = getDashboardDateDefaults();
-                startEl.value = defs.start_date;
-                endEl.value = defs.end_date;
-                loadDashboardData();
-            });
-        }
-    }
-
-    function getDashboardDateParams() {
-        var startEl = document.getElementById('hbm-dashboard-start-date');
-        var endEl = document.getElementById('hbm-dashboard-end-date');
-        if (startEl && startEl.value && endEl && endEl.value) {
-            return { start_date: startEl.value, end_date: endEl.value };
-        }
-        return { month: currentMonth };
-    }
 
     function loadDashboardData() {
-        var params = getDashboardDateParams();
+        var params = getMonthDateRange(currentMonth);
         apiRequest('dashboard', 'GET', params).then(function (data) {
             if (!data || data.error || data.code) return;
             var totalIncomeEl = document.getElementById('hbm-total-income');
@@ -648,9 +616,7 @@
     }
 
     function loadDashboard() {
-        setupDashboardDateControls();
-
-        apiRequest('dashboard', 'GET', getDashboardDateParams()).then(function (data) {
+        apiRequest('dashboard', 'GET', getMonthDateRange(currentMonth)).then(function (data) {
             if (!data || data.error || data.code) return;
             var totalIncomeEl = document.getElementById('hbm-total-income');
             if (totalIncomeEl) totalIncomeEl.textContent = formatCurrency(data.total_income);
@@ -877,25 +843,6 @@
             titleEl.textContent = 'תזרים מזומנים - ' + acct.bank_name + ' ***' + acct.last_three + (activeCashFlowIsBiz ? ' (עסקי)' : '');
         }
 
-        var startDateEl = document.getElementById('hbm-cashflow-start-date');
-        var endDateEl = document.getElementById('hbm-cashflow-end-date');
-        if (startDateEl && !startDateEl.value) {
-            var now = new Date();
-            startDateEl.value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
-        }
-        if (endDateEl && !endDateEl.value) {
-            var threeMonthsAhead = new Date();
-            threeMonthsAhead.setMonth(threeMonthsAhead.getMonth() + 3);
-            endDateEl.value = threeMonthsAhead.getFullYear() + '-' + String(threeMonthsAhead.getMonth() + 1).padStart(2, '0') + '-' + String(threeMonthsAhead.getDate()).padStart(2, '0');
-        }
-
-        var applyBtn = document.getElementById('hbm-cashflow-apply');
-        if (applyBtn) {
-            var newBtn = applyBtn.cloneNode(true);
-            applyBtn.parentNode.replaceChild(newBtn, applyBtn);
-            newBtn.addEventListener('click', function () { loadCashFlowData(); });
-        }
-
         loadCashFlowData();
     }
 
@@ -904,12 +851,8 @@
         if (!container || !activeCashFlowBankId) return;
         container.innerHTML = '<div class="hbm-empty-state"><p>טוען תזרים...</p></div>';
 
-        var params = { bank_account_id: activeCashFlowBankId };
-        var startEl = document.getElementById('hbm-cashflow-start-date');
-        var endEl = document.getElementById('hbm-cashflow-end-date');
-        if (startEl && startEl.value) params.start_date = startEl.value;
-        if (endEl && endEl.value) params.end_date = endEl.value;
-        if (!params.start_date && !params.end_date) params.months_ahead = 3;
+        var range = getMonthDateRange(currentMonth);
+        var params = { bank_account_id: activeCashFlowBankId, start_date: range.start_date, end_date: range.end_date };
 
         apiRequest('cash-flow', 'GET', params).then(function (data) {
             if (!data || data.error || !Array.isArray(data.entries)) {
@@ -1128,26 +1071,10 @@
     var PIE_COLORS = ['#3b82f6','#ef4444','#10b981','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#f97316','#6366f1','#84cc16','#06b6d4','#e11d48','#a855f7','#22c55e','#eab308','#0ea5e9'];
 
     function loadExpenseCategoriesPage() {
-        var startEl = document.getElementById('hbm-expcat-start-date');
-        var endEl = document.getElementById('hbm-expcat-end-date');
-        if (!startEl || !endEl) return;
-
-        if (!startEl.value || !endEl.value) {
-            var defaults = getDashboardDateDefaults();
-            startEl.value = defaults.start_date;
-            endEl.value = defaults.end_date;
-        }
-
-        var applyBtn = document.getElementById('hbm-expcat-apply');
-        if (applyBtn) {
-            applyBtn.onclick = function () { loadExpenseCategoriesData(); };
-        }
         loadExpenseCategoriesData();
     }
 
     function loadExpenseCategoriesData() {
-        var startEl = document.getElementById('hbm-expcat-start-date');
-        var endEl = document.getElementById('hbm-expcat-end-date');
         var chartEl = document.getElementById('hbm-expcat-chart');
         var legendEl = document.getElementById('hbm-expcat-legend');
         var detailsPanel = document.getElementById('hbm-expcat-details-panel');
@@ -1157,11 +1084,7 @@
         legendEl.innerHTML = '';
         if (detailsPanel) detailsPanel.style.display = 'none';
 
-        var params = {};
-        if (startEl && startEl.value) params.start_date = startEl.value;
-        if (endEl && endEl.value) params.end_date = endEl.value;
-
-        apiRequest('dashboard', 'GET', params).then(function (data) {
+        apiRequest('dashboard', 'GET', getMonthDateRange(currentMonth)).then(function (data) {
             if (!data || data.error || !data.expense_details) {
                 chartEl.innerHTML = '<div class="hbm-empty-state"><p>אין נתונים</p></div>';
                 return;
@@ -1365,25 +1288,6 @@
             titleEl.textContent = 'פירוט חיובי אשראי - ' + card.card_name + ' ***' + card.last_four + (activeCcChargesIsBiz ? ' (עסקי)' : '');
         }
 
-        var monthEl = document.getElementById('hbm-cc-charges-month');
-        if (monthEl && !monthEl.value) {
-            var now = new Date();
-            var billingDay = card ? parseInt(card.billing_day) : 1;
-            var chargeDate = now.getDate() > billingDay
-                ? new Date(now.getFullYear(), now.getMonth() + 1, 1)
-                : new Date(now.getFullYear(), now.getMonth(), 1);
-            var cy = chargeDate.getFullYear();
-            var cm = ('0' + (chargeDate.getMonth() + 1)).slice(-2);
-            monthEl.value = cy + '-' + cm;
-        }
-
-        var applyBtn = document.getElementById('hbm-cc-charges-apply');
-        if (applyBtn) {
-            var newBtn = applyBtn.cloneNode(true);
-            applyBtn.parentNode.replaceChild(newBtn, applyBtn);
-            newBtn.addEventListener('click', function () { loadCcChargesData(); });
-        }
-
         loadCcChargesData();
     }
 
@@ -1393,10 +1297,7 @@
         if (!container || !activeCcChargesCardId) return;
         container.innerHTML = '<div class="hbm-empty-state"><p>טוען חיובים...</p></div>';
 
-        var monthEl = document.getElementById('hbm-cc-charges-month');
-        var month = (monthEl && monthEl.value) ? monthEl.value : currentMonth;
-
-        apiRequest('credit-card-charges', 'GET', { credit_card_id: activeCcChargesCardId, month: month }).then(function (data) {
+        apiRequest('credit-card-charges', 'GET', { credit_card_id: activeCcChargesCardId, month: currentMonth }).then(function (data) {
             if (!data || data.error || !Array.isArray(data.charges)) {
                 container.innerHTML = '<div class="hbm-empty-state"><p>אין חיובים בתקופה זו</p></div>';
                 if (summaryEl) summaryEl.textContent = '';
@@ -1507,7 +1408,8 @@
 
     // ===================== Income =====================
     function loadIncome() {
-        apiRequest('income', 'GET', { is_business: 0 }).then(function (data) {
+        var range = getMonthDateRange(currentMonth);
+        apiRequest('income', 'GET', { is_business: 0, start_date: range.start_date, end_date: range.end_date }).then(function (data) {
             console.log('HBM loadIncome response:', data);
             var container = document.getElementById('hbm-income-list');
             if (!container) return;
@@ -1621,7 +1523,8 @@
 
     // ===================== Expenses =====================
     function loadExpenses() {
-        var params = { month: currentMonth, is_business: 0 };
+        var range = getMonthDateRange(currentMonth);
+        var params = { start_date: range.start_date, end_date: range.end_date, is_business: 0 };
         if (currentExpenseFilter !== 'all' && currentExpenseFilter !== 'standing_order') {
             params.type = currentExpenseFilter;
         }
@@ -2454,8 +2357,7 @@
         var container = document.getElementById('hbm-dashboard-bank-balances');
         if (!container) return;
 
-        var endEl = document.getElementById('hbm-dashboard-end-date');
-        var targetDate = endEl && endEl.value ? endEl.value : getDashboardDateDefaults().end_date;
+        var targetDate = getMonthDateRange(currentMonth).end_date;
 
         apiRequest('bank-balances', 'GET', { target_date: targetDate, is_business: 0 }).then(function (data) {
             if (!data || !Array.isArray(data) || data.length === 0) {
@@ -2481,54 +2383,12 @@
 
     // ===================== Business Dashboard Page =====================
     function loadBizDashboard() {
-        setupBizDashDateControls();
         loadBizDashData();
         loadBizDashBankBalances();
     }
 
-    function setupBizDashDateControls() {
-        var startEl = document.getElementById('hbm-biz-dash-start-date');
-        var endEl = document.getElementById('hbm-biz-dash-end-date');
-        if (!startEl || !endEl) return;
-
-        var defaults = getDashboardDateDefaults();
-        if (!startEl.value) startEl.value = defaults.start_date;
-        if (!endEl.value) endEl.value = defaults.end_date;
-
-        var applyBtn = document.getElementById('hbm-biz-dash-date-apply');
-        if (applyBtn) {
-            applyBtn.addEventListener('click', function () {
-                loadBizDashData();
-                loadBizDashBankBalances();
-            });
-        }
-        var nextBtn = document.getElementById('hbm-biz-dash-date-next');
-        if (nextBtn) {
-            nextBtn.addEventListener('click', function () {
-                var curEnd = new Date(endEl.value);
-                var nextStart = new Date(curEnd.getFullYear(), curEnd.getMonth(), 21);
-                var nextEnd = new Date(curEnd.getFullYear(), curEnd.getMonth() + 1, 20);
-                startEl.value = formatDateISO(nextStart);
-                endEl.value = formatDateISO(nextEnd);
-                loadBizDashData();
-                loadBizDashBankBalances();
-            });
-        }
-
-        var resetBtn = document.getElementById('hbm-biz-dash-date-reset');
-        if (resetBtn) {
-            resetBtn.addEventListener('click', function () {
-                var defs = getDashboardDateDefaults();
-                startEl.value = defs.start_date;
-                endEl.value = defs.end_date;
-                loadBizDashData();
-                loadBizDashBankBalances();
-            });
-        }
-    }
-
     function loadBizDashData() {
-        apiRequest('business-dashboard', 'GET', { month: currentMonth }).then(function (data) {
+        apiRequest('business-dashboard', 'GET', getMonthDateRange(currentMonth)).then(function (data) {
             if (!data || data.error) return;
             var el;
             el = document.getElementById('hbm-biz-dash-income');
@@ -2569,8 +2429,7 @@
         var container = document.getElementById('hbm-biz-dash-bank-balances');
         if (!container) return;
 
-        var endEl = document.getElementById('hbm-biz-dash-end-date');
-        var targetDate = endEl && endEl.value ? endEl.value : getDashboardDateDefaults().end_date;
+        var targetDate = getMonthDateRange(currentMonth).end_date;
 
         apiRequest('bank-balances', 'GET', { target_date: targetDate, is_business: 1 }).then(function (data) {
             if (!data || !Array.isArray(data) || data.length === 0) {
@@ -2645,7 +2504,7 @@
     }
 
     function loadBusinessDashboardPage() {
-        apiRequest('business-dashboard', 'GET', { month: currentMonth }).then(function (data) {
+        apiRequest('business-dashboard', 'GET', getMonthDateRange(currentMonth)).then(function (data) {
             if (!data || data.error) return;
             var el;
             el = document.getElementById('hbm-biz-page-income');
@@ -2729,7 +2588,8 @@
     }
 
     function loadBusinessExpenses() {
-        apiRequest('expenses', 'GET', { month: currentMonth, is_business: 1 }).then(function (data) {
+        var range = getMonthDateRange(currentMonth);
+        apiRequest('expenses', 'GET', { start_date: range.start_date, end_date: range.end_date, is_business: 1 }).then(function (data) {
             var container = document.getElementById('hbm-biz-expenses-list');
             if (!container) return;
             if (!data || data.length === 0) {
@@ -3211,7 +3071,8 @@
             apiRequest('income/' + id, 'DELETE').then(function () { loadIncome(); loadDashboard(); });
         },
         editExpense: function (id) {
-            apiRequest('expenses', 'GET', { month: currentMonth, is_business: 0 }).then(function (data) {
+            var range = getMonthDateRange(currentMonth);
+            apiRequest('expenses', 'GET', { start_date: range.start_date, end_date: range.end_date, is_business: 0 }).then(function (data) {
                 var item = data.find(function (i) { return i.id == id; });
                 if (item) showExpenseForm(item);
             });
@@ -3326,7 +3187,7 @@
         },
         showBusinessExpenseForm: function (id) {
             if (id) {
-                apiRequest('expenses', 'GET', { month: currentMonth, is_business: 1 }).then(function (data) {
+                apiRequest('expenses', 'GET', (function(){ var r = getMonthDateRange(currentMonth); return { start_date: r.start_date, end_date: r.end_date, is_business: 1 }; })()).then(function (data) {
                     var item = data.find(function (i) { return i.id == id; });
                     if (item) showBusinessExpenseForm(item);
                 });
@@ -3335,7 +3196,7 @@
             }
         },
         editBusinessExpense: function (id) {
-            apiRequest('expenses', 'GET', { month: currentMonth, is_business: 1 }).then(function (data) {
+            apiRequest('expenses', 'GET', (function(){ var r = getMonthDateRange(currentMonth); return { start_date: r.start_date, end_date: r.end_date, is_business: 1 }; })()).then(function (data) {
                 var item = data.find(function (i) { return i.id == id; });
                 if (item) showBusinessExpenseForm(item);
             });

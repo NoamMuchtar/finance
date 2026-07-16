@@ -50,6 +50,7 @@ if (!defined('ABSPATH')) {
                 <span id="hbm-current-month" style="flex:1;text-align:center;font-size:14px;font-weight:600;"></span>
                 <button class="hbm-btn-sm" id="hbm-next-month">&#8592;</button>
             </div>
+            <div id="hbm-month-date-range" style="text-align:center;font-size:11px;color:#888;margin-top:4px;"></div>
         </div>
     </aside>
 
@@ -58,15 +59,6 @@ if (!defined('ABSPATH')) {
         <section id="hbm-page-dashboard" class="hbm-page active">
             <div class="hbm-page-header"><h2>דאשבורד</h2></div>
 
-            <div class="hbm-dashboard-date-controls">
-                <div class="hbm-cashflow-dates">
-                    <label>מתאריך: <input type="date" id="hbm-dashboard-start-date" class="hbm-input-sm"></label>
-                    <label>עד תאריך: <input type="date" id="hbm-dashboard-end-date" class="hbm-input-sm"></label>
-                    <button class="hbm-btn hbm-btn-sm" id="hbm-dashboard-date-apply">הצג</button>
-                    <button class="hbm-btn hbm-btn-sm hbm-btn-outline" id="hbm-dashboard-date-next">התקופה הבאה</button>
-                    <button class="hbm-btn hbm-btn-sm hbm-btn-outline" id="hbm-dashboard-date-reset">איפוס</button>
-                </div>
-            </div>
 
             <div id="hbm-overdraft-warning" class="hbm-alert hbm-alert-danger" style="display:none;">
                 <div class="hbm-alert-icon">⚠️</div>
@@ -274,16 +266,6 @@ if (!defined('ABSPATH')) {
         <section id="hbm-page-biz-dashboard" class="hbm-page">
             <div class="hbm-page-header"><h2>דאשבורד עסקי</h2></div>
 
-            <div class="hbm-dashboard-date-controls">
-                <div class="hbm-cashflow-dates">
-                    <label>מתאריך: <input type="date" id="hbm-biz-dash-start-date" class="hbm-input-sm"></label>
-                    <label>עד תאריך: <input type="date" id="hbm-biz-dash-end-date" class="hbm-input-sm"></label>
-                    <button class="hbm-btn hbm-btn-sm" id="hbm-biz-dash-date-apply">הצג</button>
-                    <button class="hbm-btn hbm-btn-sm hbm-btn-outline" id="hbm-biz-dash-date-next">התקופה הבאה</button>
-                    <button class="hbm-btn hbm-btn-sm hbm-btn-outline" id="hbm-biz-dash-date-reset">איפוס</button>
-                </div>
-            </div>
-
             <div class="hbm-dashboard-cards">
                 <div class="hbm-card hbm-card-income">
                     <div class="hbm-card-content">
@@ -332,13 +314,6 @@ if (!defined('ABSPATH')) {
             <div class="hbm-page-header">
                 <h2 id="hbm-cashflow-page-title">תזרים מזומנים</h2>
             </div>
-            <div class="hbm-cashflow-controls" style="margin-bottom:16px;">
-                <div class="hbm-cashflow-dates">
-                    <label>מתאריך: <input type="date" id="hbm-cashflow-start-date" class="hbm-input-sm"></label>
-                    <label>עד תאריך: <input type="date" id="hbm-cashflow-end-date" class="hbm-input-sm"></label>
-                    <button class="hbm-btn hbm-btn-sm" id="hbm-cashflow-apply">הצג</button>
-                </div>
-            </div>
             <div id="hbm-cashflow-summary"></div>
             <div id="hbm-cashflow-table" class="hbm-table-container"></div>
         </section>
@@ -348,12 +323,6 @@ if (!defined('ABSPATH')) {
             <div class="hbm-page-header">
                 <h2 id="hbm-cc-charges-page-title">פירוט חיובי אשראי</h2>
             </div>
-            <div class="hbm-cashflow-controls" style="margin-bottom:16px;">
-                <div class="hbm-cashflow-dates">
-                    <label>חודש: <input type="month" id="hbm-cc-charges-month" class="hbm-input-sm"></label>
-                    <button class="hbm-btn hbm-btn-sm" id="hbm-cc-charges-apply">הצג</button>
-                </div>
-            </div>
             <div id="hbm-cc-charges-summary" style="margin-bottom:12px;font-weight:600;"></div>
             <div id="hbm-cc-charges-table" class="hbm-table-container"></div>
         </section>
@@ -361,13 +330,6 @@ if (!defined('ABSPATH')) {
         <!-- Expense Categories Breakdown -->
         <section id="hbm-page-expense-categories" class="hbm-page">
             <div class="hbm-page-header"><h2>פירוט הוצאות לפי קטגוריות</h2></div>
-            <div class="hbm-dashboard-date-controls">
-                <div class="hbm-cashflow-dates">
-                    <label>מתאריך: <input type="date" id="hbm-expcat-start-date" class="hbm-input-sm"></label>
-                    <label>עד תאריך: <input type="date" id="hbm-expcat-end-date" class="hbm-input-sm"></label>
-                    <button class="hbm-btn hbm-btn-sm" id="hbm-expcat-apply">הצג</button>
-                </div>
-            </div>
             <div class="hbm-expcat-layout">
                 <div class="hbm-panel">
                     <h3>חלוקה לפי קטגוריות</h3>

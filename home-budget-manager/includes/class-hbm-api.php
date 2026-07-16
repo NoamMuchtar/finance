@@ -185,8 +185,14 @@ class HBM_API {
         $query = "SELECT * FROM {$wpdb->prefix}hbm_income WHERE user_id = %d";
         $query_args = [$user_id];
 
+        $custom_start = sanitize_text_field($request->get_param('start_date') ?? '');
+        $custom_end = sanitize_text_field($request->get_param('end_date') ?? '');
         $month = sanitize_text_field($request->get_param('month') ?? '');
-        if ($month) {
+        if ($custom_start && $custom_end) {
+            $query .= " AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)";
+            $query_args[] = $custom_end;
+            $query_args[] = $custom_start;
+        } elseif ($month) {
             $month_start = $month . '-01';
             $month_end = date('Y-m-t', strtotime($month_start));
             $query .= " AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)";
@@ -309,11 +315,18 @@ class HBM_API {
     public static function get_expenses($request) {
         global $wpdb;
         $user_id = get_current_user_id();
-        $month = sanitize_text_field($request->get_param('month') ?? date('Y-m'));
         $type = sanitize_text_field($request->get_param('type') ?? '');
+        $custom_start = sanitize_text_field($request->get_param('start_date') ?? '');
+        $custom_end = sanitize_text_field($request->get_param('end_date') ?? '');
 
-        $month_start = $month . '-01';
-        $month_end = date('Y-m-t', strtotime($month_start));
+        if ($custom_start && $custom_end) {
+            $month_start = $custom_start;
+            $month_end = $custom_end;
+        } else {
+            $month = sanitize_text_field($request->get_param('month') ?? date('Y-m'));
+            $month_start = $month . '-01';
+            $month_end = date('Y-m-t', strtotime($month_start));
+        }
 
         $where = $wpdb->prepare("WHERE user_id = %d", $user_id);
 
@@ -2071,9 +2084,16 @@ class HBM_API {
     public static function get_business_dashboard($request) {
         global $wpdb;
         $user_id = get_current_user_id();
-        $month = sanitize_text_field($request->get_param('month') ?? date('Y-m'));
-        $month_start = $month . '-01';
-        $month_end = date('Y-m-t', strtotime($month_start));
+        $custom_start = sanitize_text_field($request->get_param('start_date') ?? '');
+        $custom_end = sanitize_text_field($request->get_param('end_date') ?? '');
+        if ($custom_start && $custom_end) {
+            $month_start = $custom_start;
+            $month_end = $custom_end;
+        } else {
+            $month = sanitize_text_field($request->get_param('month') ?? date('Y-m'));
+            $month_start = $month . '-01';
+            $month_end = date('Y-m-t', strtotime($month_start));
+        }
 
         // Business income from collections (paid/receipt_sent)
         $collections = $wpdb->get_results($wpdb->prepare(
