@@ -1825,21 +1825,36 @@ class HBM_API {
         $end_date = $custom_end ?: date('Y-m-d', strtotime("+{$months_ahead} months"));
 
         $entries = [];
+        $range_start = $today;
+        $range_end = $end_date;
+
+        // Load credit cards linked to this bank account
+        $bank_cards = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}hbm_credit_cards WHERE user_id = %d AND bank_account_id = %d",
+            $user_id, $bank_account_id
+        ));
+        $bank_card_ids = array_map(function($c) { return $c->id; }, $bank_cards);
+        $bank_card_map = [];
+        foreach ($bank_cards as $c) {
+            $bank_card_map[$c->id] = $c;
+        }
 
         // 0. Income linked to this bank account
-        $income_query = "SELECT * FROM {$wpdb->prefix}hbm_income
-             WHERE user_id = %d AND bank_account_id = %d";
-        $income_args = [$user_id, $bank_account_id];
-        $income_items = $wpdb->get_results($wpdb->prepare($income_query, $income_args));
+        $income_items = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}hbm_income
+             WHERE user_id = %d AND bank_account_id = %d
+             AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)",
+            $user_id, $bank_account_id, $range_end, $range_start
+        ));
 
         foreach ($income_items as $inc) {
             if ($inc->is_recurring) {
                 $start = new DateTime($inc->start_date);
-                $end_dt = $inc->end_date ? new DateTime(min($inc->end_date, $end_date)) : new DateTime($end_date);
+                $end_dt = $inc->end_date ? new DateTime(min($inc->end_date, $range_end)) : new DateTime($range_end);
                 $current = clone $start;
                 while ($current <= $end_dt) {
                     $entry_date = $current->format('Y-m-d');
-                    if ($entry_date >= $balance_date && $entry_date <= $end_date) {
+                    if ($entry_date >= $range_start && $entry_date <= $range_end) {
                         $entries[] = [
                             'date' => $entry_date,
                             'description' => $inc->title,
@@ -1852,7 +1867,7 @@ class HBM_API {
                     $current->modify('+1 month');
                 }
             } else {
-                if ($inc->start_date >= $balance_date && $inc->start_date <= $end_date) {
+                if ($inc->start_date >= $range_start && $inc->start_date <= $range_end) {
                     $entries[] = [
                         'date' => $inc->start_date,
                         'description' => $inc->title,
@@ -1865,37 +1880,40 @@ class HBM_API {
             }
         }
 
-        // 1. Past transactions affecting this bank account
-        $past_exp_query = "SELECT * FROM {$wpdb->prefix}hbm_expenses
-             WHERE user_id = %d AND bank_account_id = %d AND start_date <= %s";
-        $past_exp_args = [$user_id, $bank_account_id, $today];
+        // 1. Direct bank expenses (bank_account_id matches, no credit card)
+        $direct_exp_query = "SELECT * FROM {$wpdb->prefix}hbm_expenses
+             WHERE user_id = %d AND bank_account_id = %d
+             AND (credit_card_id IS NULL OR credit_card_id = 0)
+             AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)";
+        $direct_exp_args = [$user_id, $bank_account_id, $range_end, $range_start];
         if ($filter_business) {
-            $past_exp_query .= " AND is_business = %d";
-            $past_exp_args[] = $is_business_val;
+            $direct_exp_query .= " AND is_business = %d";
+            $direct_exp_args[] = $is_business_val;
         }
-        $past_expenses = $wpdb->get_results($wpdb->prepare($past_exp_query, $past_exp_args));
+        $direct_expenses = $wpdb->get_results($wpdb->prepare($direct_exp_query, $direct_exp_args));
 
-        foreach ($past_expenses as $exp) {
+        foreach ($direct_expenses as $exp) {
             if ($exp->type === 'one_time') {
-                if ($exp->start_date >= $balance_date) {
+                if ($exp->start_date >= $range_start && $exp->start_date <= $range_end) {
                     $entries[] = [
                         'date' => $exp->start_date,
                         'description' => $exp->title,
-                        'type' => 'expense_' . $exp->type,
+                        'type' => 'expense_one_time',
                         'amount' => -floatval($exp->amount),
                         'is_charge' => true,
                     ];
                 }
             } elseif ($exp->type === 'fixed' || $exp->type === 'saving') {
                 $start = new DateTime($exp->start_date);
-                $end_dt = $exp->end_date ? new DateTime(min($exp->end_date, $today)) : new DateTime($today);
+                $end_dt = $exp->end_date ? new DateTime(min($exp->end_date, $range_end)) : new DateTime($range_end);
                 $current = clone $start;
                 while ($current <= $end_dt) {
                     $entry_date = $current->format('Y-m-d');
-                    if ($entry_date >= $balance_date) {
+                    if ($entry_date >= $range_start && $entry_date <= $range_end) {
+                        $suffix = $exp->type === 'saving' ? ' (חיסכון)' : '';
                         $entries[] = [
                             'date' => $entry_date,
-                            'description' => $exp->title,
+                            'description' => $exp->title . $suffix,
                             'type' => 'expense_' . $exp->type,
                             'amount' => -floatval($exp->amount),
                             'is_charge' => true,
@@ -1903,149 +1921,31 @@ class HBM_API {
                     }
                     $current->modify('+1 month');
                 }
-            } elseif ($exp->type === 'loan') {
-                $start = new DateTime($exp->start_date);
-                $end_dt = $exp->loan_end_date ? new DateTime(min($exp->loan_end_date, $today)) : new DateTime($today);
-                $current = clone $start;
-                $monthly = floatval($exp->monthly_return);
-                while ($current <= $end_dt && $monthly > 0) {
-                    $pay_day = $exp->loan_payment_day ? intval($exp->loan_payment_day) : intval($current->format('d'));
-                    $payment_date = $current->format('Y-m') . '-' . sprintf('%02d', min($pay_day, intval(date('t', strtotime($current->format('Y-m-01'))))));
-                    if ($payment_date >= $balance_date) {
-                        $entries[] = [
-                            'date' => $payment_date,
-                            'description' => $exp->title,
-                            'type' => 'loan_payment',
-                            'amount' => -$monthly,
-                            'is_charge' => true,
-                        ];
-                    }
-                    $current->modify('+1 month');
-                }
-            } elseif ($exp->type === 'installment') {
-                $start = new DateTime($exp->start_date);
-                $inst_amount = floatval($exp->installment_amount ?: ($exp->amount / $exp->total_installments));
-                for ($i = 0; $i < $exp->total_installments; $i++) {
-                    $pay_dt = clone $start;
-                    $pay_dt->modify("+{$i} months");
-                    $pdate = $pay_dt->format('Y-m-d');
-                    if ($pdate > $today) break;
-                    if ($pdate >= $balance_date) {
-                        $entries[] = [
-                            'date' => $pdate,
-                            'description' => $exp->title . " (תשלום " . ($i + 1) . "/" . $exp->total_installments . ")",
-                            'type' => 'installment_payment',
-                            'amount' => -$inst_amount,
-                            'is_charge' => true,
-                        ];
-                    }
-                }
             }
         }
 
-        // Past standing orders affecting this bank account
-        $past_standing = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}hbm_standing_orders
-             WHERE user_id = %d AND bank_account_id = %d AND is_active = 1 AND start_date <= %s",
-            $user_id, $bank_account_id, $today
-        ));
-
-        foreach ($past_standing as $order) {
-            $start = new DateTime($order->start_date);
-            $end_dt = $order->end_date ? new DateTime(min($order->end_date, $today)) : new DateTime($today);
-            $current = clone $start;
-            while ($current <= $end_dt) {
-                $dom = intval($order->day_of_month);
-                $days_in = intval(date('t', strtotime($current->format('Y-m-01'))));
-                $actual_day = min($dom, $days_in);
-                $order_date = $current->format('Y-m') . '-' . sprintf('%02d', $actual_day);
-                if ($order_date <= $today && $order_date >= $balance_date) {
-                    $entries[] = [
-                        'date' => $order_date,
-                        'description' => $order->title,
-                        'type' => 'standing_order',
-                        'amount' => -floatval($order->amount),
-                        'is_charge' => true,
-                    ];
-                }
-                $current->modify('+1 month');
-            }
-        }
-
-        // Past reserved payments for this bank account (only after balance_date)
-        $past_reserved = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}hbm_reserved_payments
-             WHERE user_id = %d AND bank_account_id = %d AND is_paid = 1 AND payment_date <= %s AND payment_date >= %s",
-            $user_id, $bank_account_id, $today, $balance_date
-        ));
-
-        foreach ($past_reserved as $rp) {
-            $entries[] = [
-                'date' => $rp->payment_date,
-                'description' => $rp->title,
-                'type' => 'reserved_payment',
-                'amount' => -floatval($rp->amount),
-                'is_charge' => true,
-            ];
-        }
-
-        // 2. Future projections
-        $tomorrow = date('Y-m-d', strtotime('+1 day'));
-
-        // Future standing orders
-        $future_standing = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}hbm_standing_orders
-             WHERE user_id = %d AND bank_account_id = %d AND is_active = 1
-             AND (end_date IS NULL OR end_date >= %s)",
-            $user_id, $bank_account_id, $tomorrow
-        ));
-
-        foreach ($future_standing as $order) {
-            $start = new DateTime(max($order->start_date, $tomorrow));
-            // Start from the first of the month of our start
-            $current = new DateTime($start->format('Y-m-01'));
-            $end_dt = $order->end_date ? new DateTime(min($order->end_date, $end_date)) : new DateTime($end_date);
-            while ($current <= $end_dt) {
-                $dom = intval($order->day_of_month);
-                $days_in = intval(date('t', strtotime($current->format('Y-m-01'))));
-                $actual_day = min($dom, $days_in);
-                $order_date = $current->format('Y-m') . '-' . sprintf('%02d', $actual_day);
-                if ($order_date > $today && $order_date <= $end_date) {
-                    $entries[] = [
-                        'date' => $order_date,
-                        'description' => $order->title . ' (הו"ק)',
-                        'type' => 'standing_order',
-                        'amount' => -floatval($order->amount),
-                        'is_charge' => true,
-                    ];
-                }
-                $current->modify('+1 month');
-            }
-        }
-
-        // Future loan payments
-        $future_loans_query = "SELECT * FROM {$wpdb->prefix}hbm_expenses
+        // 2. Loan payments from this bank account
+        $loan_query = "SELECT * FROM {$wpdb->prefix}hbm_expenses
              WHERE user_id = %d AND bank_account_id = %d AND type = 'loan'
-             AND (loan_end_date IS NULL OR loan_end_date >= %s)";
-        $future_loans_args = [$user_id, $bank_account_id, $tomorrow];
+             AND start_date <= %s AND (loan_end_date IS NULL OR loan_end_date >= %s)";
+        $loan_args = [$user_id, $bank_account_id, $range_end, $range_start];
         if ($filter_business) {
-            $future_loans_query .= " AND is_business = %d";
-            $future_loans_args[] = $is_business_val;
+            $loan_query .= " AND is_business = %d";
+            $loan_args[] = $is_business_val;
         }
-        $future_loans = $wpdb->get_results($wpdb->prepare($future_loans_query, $future_loans_args));
+        $loans = $wpdb->get_results($wpdb->prepare($loan_query, $loan_args));
 
-        foreach ($future_loans as $loan) {
+        foreach ($loans as $loan) {
             $monthly = floatval($loan->monthly_return);
             if ($monthly <= 0) continue;
-            $current = new DateTime(max($loan->start_date, $tomorrow));
-            $current = new DateTime($current->format('Y-m-01'));
-            $loan_end = $loan->loan_end_date ? new DateTime(min($loan->loan_end_date, $end_date)) : new DateTime($end_date);
+            $current = new DateTime($loan->start_date);
+            $loan_end = $loan->loan_end_date ? new DateTime(min($loan->loan_end_date, $range_end)) : new DateTime($range_end);
             while ($current <= $loan_end) {
-                $pay_day = $loan->loan_payment_day ? intval($loan->loan_payment_day) : intval((new DateTime($loan->start_date))->format('d'));
+                $pay_day = $loan->loan_payment_day ? intval($loan->loan_payment_day) : intval($current->format('d'));
                 $days_in = intval(date('t', strtotime($current->format('Y-m-01'))));
                 $actual_day = min($pay_day, $days_in);
                 $payment_date = $current->format('Y-m') . '-' . sprintf('%02d', $actual_day);
-                if ($payment_date > $today && $payment_date <= $end_date) {
+                if ($payment_date >= $range_start && $payment_date <= $range_end) {
                     $entries[] = [
                         'date' => $payment_date,
                         'description' => $loan->title . ' (הלוואה)',
@@ -2058,81 +1958,88 @@ class HBM_API {
             }
         }
 
-        // Future installment payments (via credit card billing dates)
-        $future_inst_query = "SELECT e.*, cc.billing_day FROM {$wpdb->prefix}hbm_expenses e
-             LEFT JOIN {$wpdb->prefix}hbm_credit_cards cc ON e.credit_card_id = cc.id
-             WHERE e.user_id = %d AND e.bank_account_id = %d AND e.type = 'installment'
-             AND (e.end_date IS NULL OR e.end_date >= %s)";
-        $future_inst_args = [$user_id, $bank_account_id, $tomorrow];
-        if ($filter_business) {
-            $future_inst_query .= " AND e.is_business = %d";
-            $future_inst_args[] = $is_business_val;
-        }
-        $future_installments = $wpdb->get_results($wpdb->prepare($future_inst_query, $future_inst_args));
+        // 3. Standing orders from this bank account
+        $standing = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}hbm_standing_orders
+             WHERE user_id = %d AND bank_account_id = %d AND is_active = 1
+             AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)",
+            $user_id, $bank_account_id, $range_end, $range_start
+        ));
 
-        foreach ($future_installments as $inst) {
-            $inst_amount = floatval($inst->installment_amount ?: ($inst->amount / $inst->total_installments));
-            $start = new DateTime($inst->start_date);
-            for ($i = 0; $i < $inst->total_installments; $i++) {
-                $pay_dt = clone $start;
-                $pay_dt->modify("+{$i} months");
-                $pdate = $pay_dt->format('Y-m-d');
-                if ($pdate > $today && $pdate <= $end_date) {
+        foreach ($standing as $order) {
+            $start = new DateTime($order->start_date);
+            $end_dt = $order->end_date ? new DateTime(min($order->end_date, $range_end)) : new DateTime($range_end);
+            $current = clone $start;
+            while ($current <= $end_dt) {
+                $dom = intval($order->day_of_month);
+                $days_in = intval(date('t', strtotime($current->format('Y-m-01'))));
+                $actual_day = min($dom, $days_in);
+                $order_date = $current->format('Y-m') . '-' . sprintf('%02d', $actual_day);
+                if ($order_date >= $range_start && $order_date <= $range_end) {
                     $entries[] = [
-                        'date' => $pdate,
-                        'description' => $inst->title . " (תשלום " . ($i + 1) . "/" . $inst->total_installments . ")",
-                        'type' => 'installment_payment',
-                        'amount' => -$inst_amount,
+                        'date' => $order_date,
+                        'description' => $order->title . ' (הו"ק)',
+                        'type' => 'standing_order',
+                        'amount' => -floatval($order->amount),
                         'is_charge' => true,
                     ];
                 }
+                $current->modify('+1 month');
             }
         }
 
-        // Future reserved payments (unpaid)
-        $future_reserved = $wpdb->get_results($wpdb->prepare(
+        // 4. Reserved payments for this bank account
+        $reserved = $wpdb->get_results($wpdb->prepare(
             "SELECT * FROM {$wpdb->prefix}hbm_reserved_payments
-             WHERE user_id = %d AND bank_account_id = %d AND is_paid = 0 AND payment_date > %s AND payment_date <= %s",
-            $user_id, $bank_account_id, $today, $end_date
+             WHERE user_id = %d AND bank_account_id = %d
+             AND payment_date >= %s AND payment_date <= %s",
+            $user_id, $bank_account_id, $range_start, $range_end
         ));
 
-        foreach ($future_reserved as $rp) {
+        foreach ($reserved as $rp) {
             $entries[] = [
                 'date' => $rp->payment_date,
-                'description' => $rp->title . ' (תשלום עתידי)',
+                'description' => $rp->title . ($rp->is_paid ? '' : ' (תשלום עתידי)'),
                 'type' => 'reserved_payment',
                 'amount' => -floatval($rp->amount),
                 'is_charge' => true,
             ];
         }
 
-        // Future savings
-        $future_sav_query = "SELECT * FROM {$wpdb->prefix}hbm_expenses
-             WHERE user_id = %d AND bank_account_id = %d AND type = 'saving'
-             AND (end_date IS NULL OR end_date >= %s)";
-        $future_sav_args = [$user_id, $bank_account_id, $tomorrow];
-        if ($filter_business) {
-            $future_sav_query .= " AND is_business = %d";
-            $future_sav_args[] = $is_business_val;
-        }
-        $future_savings = $wpdb->get_results($wpdb->prepare($future_sav_query, $future_sav_args));
+        // 5. Credit card billing charges — aggregate per card per billing month
+        if (!empty($bank_card_ids)) {
+            $card_id_placeholders = implode(',', array_fill(0, count($bank_card_ids), '%d'));
 
-        foreach ($future_savings as $saving) {
-            $current = new DateTime(max($saving->start_date, $tomorrow));
-            $current = new DateTime($current->format('Y-m-01'));
-            $sav_end = $saving->end_date ? new DateTime(min($saving->end_date, $end_date)) : new DateTime($end_date);
-            while ($current <= $sav_end) {
-                $sav_date = $current->format('Y-m') . '-' . (new DateTime($saving->start_date))->format('d');
-                if ($sav_date > $today && $sav_date <= $end_date) {
-                    $entries[] = [
-                        'date' => $sav_date,
-                        'description' => $saving->title . ' (חיסכון)',
-                        'type' => 'saving',
-                        'amount' => -floatval($saving->amount),
-                        'is_charge' => true,
-                    ];
+            foreach ($bank_cards as $card) {
+                $billing_day = intval($card->billing_day);
+                $card_label = $card->card_name . ' ***' . $card->last_four;
+
+                // Find which billing dates fall within the range
+                $cur_month = new DateTime((new DateTime($range_start))->format('Y-m-01'));
+                $end_month = new DateTime((new DateTime($range_end))->format('Y-m-01'));
+                $end_month->modify('+1 month');
+
+                while ($cur_month <= $end_month) {
+                    $days_in = intval($cur_month->format('t'));
+                    $actual_day = min($billing_day, $days_in);
+                    $billing_date = $cur_month->format('Y-m') . '-' . sprintf('%02d', $actual_day);
+
+                    if ($billing_date >= $range_start && $billing_date <= $range_end) {
+                        $billing_month = $cur_month->format('Y-m');
+                        $charge_total = self::get_cc_billing_total($wpdb, $user_id, $card->id, $billing_day, $billing_month, $filter_business, $is_business_val);
+
+                        if ($charge_total > 0) {
+                            $entries[] = [
+                                'date' => $billing_date,
+                                'description' => 'חיוב כרטיס ' . $card_label,
+                                'type' => 'cc_charge',
+                                'amount' => -$charge_total,
+                                'is_charge' => true,
+                            ];
+                        }
+                    }
+                    $cur_month->modify('+1 month');
                 }
-                $current->modify('+1 month');
             }
         }
 
@@ -2544,6 +2451,38 @@ class HBM_API {
         $s = explode('-', substr($start, 0, 7));
         $e = explode('-', substr($end, 0, 7));
         return (intval($e[0]) - intval($s[0])) * 12 + (intval($e[1]) - intval($s[1]));
+    }
+
+    private static function get_cc_billing_total($wpdb, $user_id, $card_id, $billing_day, $billing_month, $filter_business = false, $is_business_val = null) {
+        $month_start = $billing_month . '-01';
+        $month_end = date('Y-m-t', strtotime($month_start));
+
+        $query = "SELECT * FROM {$wpdb->prefix}hbm_expenses
+             WHERE user_id = %d AND credit_card_id = %d
+             AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)";
+        $args = [$user_id, $card_id, $month_end, $month_start];
+        if ($filter_business) {
+            $query .= " AND is_business = %d";
+            $args[] = $is_business_val;
+        }
+        $expenses = $wpdb->get_results($wpdb->prepare($query, $args));
+
+        $total = 0;
+        foreach ($expenses as $exp) {
+            if ($exp->type === 'one_time') {
+                $deduction = self::get_one_time_cc_deduction_date($exp->start_date, $billing_day);
+                if (substr($deduction, 0, 7) !== $billing_month) continue;
+                $total += floatval($exp->amount);
+            } elseif ($exp->type === 'installment') {
+                $months_passed = self::months_between($exp->start_date, $month_start);
+                $current = $months_passed + 1;
+                if ($current < 1 || $current > intval($exp->total_installments)) continue;
+                $total += floatval($exp->installment_amount ?: ($exp->amount / $exp->total_installments));
+            } else {
+                $total += floatval($exp->amount);
+            }
+        }
+        return $total;
     }
 
     private static function get_one_time_cc_deduction_date($expense_start_date, $billing_day) {
