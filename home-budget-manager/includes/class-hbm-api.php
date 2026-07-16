@@ -1838,11 +1838,12 @@ class HBM_API {
 
         $warnings = [];
 
+        $sixty_days_ahead = date('Y-m-d', strtotime('+60 days'));
+
         foreach ($bank_accounts as $account) {
-            // Build a fake request to call get_cash_flow for each bank account
             $cf_request = new WP_REST_Request('GET');
             $cf_request->set_param('bank_account_id', $account->id);
-            $cf_request->set_param('months_ahead', 3);
+            $cf_request->set_param('end_date', $sixty_days_ahead);
 
             $cf_response = self::get_cash_flow($cf_request);
             $cf_data = $cf_response->get_data();
@@ -1854,6 +1855,9 @@ class HBM_API {
             $credit_limit = floatval($account->credit_limit);
 
             foreach ($cf_data['entries'] as $entry) {
+                if ($entry['date'] > $sixty_days_ahead) {
+                    break;
+                }
                 $running_balance = floatval($entry['running_balance']);
                 if ($running_balance < -$credit_limit) {
                     $warnings[] = [
@@ -1865,7 +1869,6 @@ class HBM_API {
                         'projected_balance' => $running_balance,
                         'credit_limit' => $credit_limit,
                     ];
-                    // Only report the first overdraft per account
                     break;
                 }
             }

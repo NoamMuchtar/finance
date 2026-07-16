@@ -220,6 +220,27 @@
     margin: 8px 14px;
 }
 
+.hbm-sidebar-nav-header {
+    display: block;
+    padding: 6px 20px 2px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: rgba(255, 255, 255, 0.35);
+}
+
+.hbm-sidebar-nav-sub {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.hbm-sidebar-nav-sub .hbm-sidebar-nav-item {
+    padding-right: 36px;
+    font-size: 13px;
+}
+
 /* Month Selector in Sidebar */
 .hbm-sidebar-month {
     padding: 16px;
