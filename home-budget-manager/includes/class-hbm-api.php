@@ -753,9 +753,17 @@ class HBM_API {
         ));
 
         $total_income = 0;
+        $filtered_income = [];
         foreach ($income as $item) {
+            if (!$item->is_recurring) {
+                if ($item->start_date < $month_start || $item->start_date > $month_end) {
+                    continue;
+                }
+            }
             $total_income += floatval($item->amount);
+            $filtered_income[] = $item;
         }
+        $income = $filtered_income;
 
         $expenses = $wpdb->get_results($wpdb->prepare(
             "SELECT * FROM {$wpdb->prefix}hbm_expenses
