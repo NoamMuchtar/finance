@@ -8,9 +8,11 @@
     var currentMonth = hbmData.currentMonth;
     var currentExpenseFilter = 'all';
 
-    // New global state
     var creditCards = [];
     var bankAccounts = [];
+    var bizCreditCards = [];
+    var bizBankAccounts = [];
+    var allocations = [];
     var userType = 'salaried';
 
     var MONTHS_HE = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
@@ -27,6 +29,7 @@
         loadUserSettings();
         loadCreditCards();
         loadBankAccounts();
+        loadAllocationsData();
         loadDashboard();
     }
 
@@ -172,14 +175,22 @@
             case 'settings': loadSettings(); break;
             case 'reserved-payments': loadReservedPayments(); break;
             case 'collections': loadCollections(); break;
+            case 'business': loadBusinessPage(); break;
         }
     }
 
     function updateNavVisibility() {
+        var isSelfEmployed = userType === 'self_employed';
         var navCollections = document.getElementById('hbm-nav-collections');
-        if (navCollections) {
-            navCollections.style.display = userType === 'self_employed' ? '' : 'none';
-        }
+        if (navCollections) navCollections.style.display = isSelfEmployed ? '' : 'none';
+        var navBusiness = document.getElementById('hbm-nav-business');
+        if (navBusiness) navBusiness.style.display = isSelfEmployed ? '' : 'none';
+        var navBizDivider = document.getElementById('hbm-nav-business-divider');
+        if (navBizDivider) navBizDivider.style.display = isSelfEmployed ? '' : 'none';
+        var bizSettings = document.getElementById('hbm-business-settings');
+        if (bizSettings) bizSettings.style.display = isSelfEmployed ? '' : 'none';
+        var bizSummary = document.getElementById('hbm-business-summary');
+        if (bizSummary) bizSummary.style.display = isSelfEmployed ? '' : 'none';
     }
 
     // Month Selector
@@ -270,8 +281,6 @@
                 showExpenseForm();
             });
         }
-        var saveAllocBtn = document.getElementById('hbm-save-allocations');
-        if (saveAllocBtn) saveAllocBtn.addEventListener('click', saveAllocations);
         var addCatBtn = document.getElementById('hbm-add-category');
         if (addCatBtn) addCatBtn.addEventListener('click', addCategory);
     }
@@ -292,11 +301,14 @@
             if (data && !data.error) {
                 userType = data.user_type || 'salaried';
                 updateNavVisibility();
-                // Update radio buttons if on settings page
                 var radios = document.querySelectorAll('input[name="hbm-user-type"]');
                 radios.forEach(function (r) {
                     r.checked = r.value === userType;
                 });
+                if (userType === 'self_employed') {
+                    loadBusinessCreditCards();
+                    loadBusinessBankAccounts();
+                }
             }
         });
     }
@@ -494,7 +506,9 @@
             renderBudgetStatus(data.budget_status);
         });
 
-        // Load dashboard reserved payments
+        loadOverdraftWarning();
+        if (userType === 'self_employed') loadBusinessDashboard();
+
         loadDashboardReservedPayments();
 
         // Setup cashflow bank account change handler
@@ -852,6 +866,13 @@
             buildBankAccountOptions(editData ? editData.bank_account_id : null) +
             '</select></div></div>' +
 
+            // Allocation selector
+            '<div id="hbm-allocation-field" class="hbm-form-group">' +
+            '<label>הקצאת תקציב (אופציונלי)</label>' +
+            '<select name="allocation_id" id="hbm-expense-allocation">' +
+            buildAllocationOptions(editData ? editData.allocation_id : null) +
+            '</select></div>' +
+
             // Installment fields
             '<div id="hbm-installment-fields" class="hbm-type-fields">' +
             '<div class="hbm-form-row">' +
@@ -936,6 +957,10 @@
                 description: form.description.value,
                 start_date: form.start_date.value,
             };
+
+            if (form.allocation_id && form.allocation_id.value) {
+                payload.allocation_id = parseInt(form.allocation_id.value);
+            }
 
             if (type === 'one_time') {
                 payload.payment_method = form.payment_method.value;
@@ -1399,41 +1424,601 @@
     }
 
     // ===================== Allocations =====================
+    function loadAllocationsData() {
+        apiRequest('budget-allocations', 'GET').then(function (data) {
+            if (data && Array.isArray(data)) allocations = data;
+        });
+    }
+
+    function buildAllocationOptions(selectedId) {
+        var html = '<option value="">ללא הקצאה</option>';
+        allocations.forEach(function (a) {
+            if (!a.is_active) return;
+            var sel = selectedId && selectedId == a.id ? ' selected' : '';
+            var remaining = parseFloat(a.amount) - parseFloat(a.used_amount || 0);
+            html += '<option value="' + a.id + '"' + sel + '>' + escapeHtml(a.label) + ' (נותר: ' + formatCurrency(remaining) + ')</option>';
+        });
+        return html;
+    }
+
     function loadAllocations() {
         apiRequest('budget-allocations', 'GET').then(function (data) {
-            var container = document.getElementById('hbm-allocations-form');
+            var container = document.getElementById('hbm-allocations-list');
             if (!container) return;
-            var allocMap = {};
-            if (data) {
-                data.forEach(function (a) { allocMap[a.category] = a.amount; });
+            if (!data || !Array.isArray(data) || data.length === 0) {
+                allocations = [];
+                container.innerHTML = '<div class="hbm-empty-state"><div class="hbm-empty-state-icon">📊</div><p>אין הקצאות תקציב</p></div>';
+                return;
             }
+            allocations = data;
 
             var html = '';
-            Object.keys(CATEGORIES).forEach(function (key) {
-                var amount = allocMap[key] || '';
-                html += '<div class="hbm-allocation-item">' +
-                    '<label>' + CATEGORIES[key] + '</label>' +
-                    '<input type="number" step="1" data-category="' + key + '" value="' + amount + '" placeholder="₪0">' +
-                    '</div>';
+            data.forEach(function (a) {
+                var used = parseFloat(a.used_amount || 0);
+                var total = parseFloat(a.amount);
+                var remaining = total - used;
+                var pct = total > 0 ? Math.min((used / total) * 100, 100) : 0;
+                var barClass = pct >= 100 ? 'over-budget' : pct >= 80 ? 'warning' : '';
+
+                html += '<div class="hbm-allocation-card">' +
+                    '<div class="hbm-allocation-info">' +
+                    '<div class="hbm-allocation-header">' +
+                    '<strong>' + escapeHtml(a.label) + '</strong>' +
+                    '<div>' +
+                    '<button class="hbm-btn hbm-btn-ghost hbm-btn-sm" onclick="hbmApp.editAllocation(' + a.id + ')">✏️</button> ' +
+                    '<button class="hbm-btn hbm-btn-danger hbm-btn-sm" onclick="hbmApp.deleteAllocation(' + a.id + ')">🗑️</button>' +
+                    '</div></div>' +
+                    '<div class="hbm-allocation-details">' +
+                    '<span>הוקצה: ' + formatCurrency(total) + '</span>' +
+                    '<span>נוצל: ' + formatCurrency(used) + '</span>' +
+                    '<span>נותר: ' + formatCurrency(remaining) + '</span>' +
+                    (a.deduction_date ? '<span>תאריך הורדה: ' + formatDate(a.deduction_date) + '</span>' : '') +
+                    '</div>' +
+                    '<div class="hbm-allocation-bar"><div class="hbm-allocation-bar-fill ' + barClass + '" style="width:' + pct + '%"></div></div>' +
+                    '</div></div>';
             });
 
             container.innerHTML = html;
         });
     }
 
-    function saveAllocations() {
-        var inputs = document.querySelectorAll('#hbm-allocations-form input');
-        var allocations = [];
-        inputs.forEach(function (input) {
-            var val = parseFloat(input.value);
-            if (val > 0) {
-                allocations.push({ category: input.getAttribute('data-category'), amount: val });
+    function showAllocationForm(editData) {
+        var isEdit = !!editData;
+        var html = '<form id="hbm-allocation-form">' +
+            '<div class="hbm-form-group"><label>תיאור ההקצאה</label>' +
+            '<input type="text" name="label" value="' + escapeHtml(editData ? editData.label : '') + '" required placeholder="למשל: חופשה, ריהוט, חינוך"></div>' +
+            '<div class="hbm-form-row">' +
+            '<div class="hbm-form-group"><label>סכום</label>' +
+            '<input type="number" step="0.01" name="amount" value="' + (editData ? editData.amount : '') + '" required></div>' +
+            '<div class="hbm-form-group"><label>תאריך הורדה בפועל (אופציונלי)</label>' +
+            '<input type="date" name="deduction_date" value="' + (editData ? editData.deduction_date || '' : '') + '"></div>' +
+            '</div>' +
+            '<div class="hbm-form-actions">' +
+            '<button type="submit" class="hbm-btn hbm-btn-primary">' + (isEdit ? 'עדכן' : 'הוסף') + '</button>' +
+            '<button type="button" class="hbm-btn hbm-btn-ghost" onclick="hbmApp.closeModal()">ביטול</button>' +
+            '</div></form>';
+
+        openModal(isEdit ? 'עריכת הקצאה' : 'הוספת הקצאה', html);
+
+        document.getElementById('hbm-allocation-form').addEventListener('submit', function (e) {
+            e.preventDefault();
+            var form = e.target;
+            var payload = {
+                label: form.label.value,
+                amount: parseFloat(form.amount.value),
+            };
+            if (form.deduction_date.value) payload.deduction_date = form.deduction_date.value;
+
+            var method = isEdit ? 'PUT' : 'POST';
+            var endpoint = isEdit ? 'budget-allocations/' + editData.id : 'budget-allocations';
+            apiRequest(endpoint, method, payload).then(function (response) {
+                if (response && response.id) {
+                    closeModal();
+                    loadAllocations();
+                    loadDashboard();
+                }
+            });
+        });
+    }
+
+    function deleteAllocation(id) {
+        if (!confirm('האם למחוק הקצאה זו?')) return;
+        apiRequest('budget-allocations/' + id, 'DELETE').then(function () {
+            loadAllocations();
+            loadDashboard();
+        });
+    }
+
+    // ===================== Overdraft Warning =====================
+    function loadOverdraftWarning() {
+        var warningEl = document.getElementById('hbm-overdraft-warning');
+        var detailsEl = document.getElementById('hbm-overdraft-details');
+        if (!warningEl || !detailsEl) return;
+
+        apiRequest('overdraft-check', 'GET').then(function (data) {
+            if (!data || data.error || !Array.isArray(data) || data.length === 0) {
+                warningEl.style.display = 'none';
+                return;
             }
+            warningEl.style.display = '';
+            var html = '';
+            data.forEach(function (w) {
+                var bizLabel = w.is_business ? ' (עסקי)' : '';
+                html += '<p>חשבון <strong>' + escapeHtml(w.bank_name) + ' ***' + escapeHtml(w.last_three) + bizLabel +
+                    '</strong> — צפי לחריגה בתאריך ' + formatDate(w.overdraft_date) +
+                    ' | יתרה צפויה: ' + formatCurrency(w.projected_balance) +
+                    ' | מסגרת: ' + formatCurrency(w.credit_limit) + '</p>';
+            });
+            detailsEl.innerHTML = html;
+        });
+    }
+
+    // ===================== Business =====================
+    function loadBusinessPage() {
+        loadBusinessDashboardPage();
+        loadBusinessIncome();
+        loadBusinessExpenses();
+        loadBusinessCashFlowSelector();
+    }
+
+    function loadBusinessDashboard() {
+        apiRequest('business-dashboard', 'GET', { month: currentMonth }).then(function (data) {
+            if (!data || data.error) return;
+            var el;
+            el = document.getElementById('hbm-biz-income');
+            if (el) el.textContent = formatCurrency(data.total_income);
+            el = document.getElementById('hbm-biz-expenses');
+            if (el) el.textContent = formatCurrency(data.total_expenses);
+            el = document.getElementById('hbm-biz-salary');
+            if (el) el.textContent = formatCurrency(data.available_salary);
+        });
+    }
+
+    function loadBusinessDashboardPage() {
+        apiRequest('business-dashboard', 'GET', { month: currentMonth }).then(function (data) {
+            if (!data || data.error) return;
+            var el;
+            el = document.getElementById('hbm-biz-page-income');
+            if (el) el.textContent = formatCurrency(data.total_income);
+            el = document.getElementById('hbm-biz-page-expenses');
+            if (el) el.textContent = formatCurrency(data.total_expenses);
+            el = document.getElementById('hbm-biz-page-salary');
+            if (el) el.textContent = formatCurrency(data.available_salary);
+        });
+    }
+
+    function loadBusinessIncome() {
+        apiRequest('income', 'GET', { month: currentMonth, is_business: 1 }).then(function (data) {
+            var container = document.getElementById('hbm-biz-income-list');
+            if (!container) return;
+            if (!data || data.length === 0) {
+                container.innerHTML = '<div class="hbm-empty-state"><p>אין הכנסות עסקיות</p></div>';
+                return;
+            }
+            var html = '<table class="hbm-table"><thead><tr>' +
+                '<th>שם</th><th>מקור</th><th>סכום</th><th>תאריך התחלה</th><th>תאריך סיום</th><th>פעולות</th>' +
+                '</tr></thead><tbody>';
+            data.forEach(function (item) {
+                html += '<tr>' +
+                    '<td>' + escapeHtml(item.title) + '</td>' +
+                    '<td>' + escapeHtml(item.source || '-') + '</td>' +
+                    '<td><strong>' + formatCurrency(item.amount) + '</strong></td>' +
+                    '<td>' + formatDate(item.start_date) + '</td>' +
+                    '<td>' + formatDate(item.end_date) + '</td>' +
+                    '<td><button class="hbm-btn hbm-btn-ghost hbm-btn-sm" onclick="hbmApp.editBusinessIncome(' + item.id + ')">✏️</button> ' +
+                    '<button class="hbm-btn hbm-btn-danger hbm-btn-sm" onclick="hbmApp.deleteIncome(' + item.id + ')">🗑️</button></td>' +
+                    '</tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        });
+    }
+
+    function loadBusinessExpenses() {
+        apiRequest('expenses', 'GET', { month: currentMonth, is_business: 1 }).then(function (data) {
+            var container = document.getElementById('hbm-biz-expenses-list');
+            if (!container) return;
+            if (!data || data.length === 0) {
+                container.innerHTML = '<div class="hbm-empty-state"><p>אין הוצאות עסקיות</p></div>';
+                return;
+            }
+            var html = '<table class="hbm-table"><thead><tr>' +
+                '<th>שם</th><th>סוג</th><th>למי</th><th>קטגוריה</th><th>סכום</th><th>פרטים</th><th>פעולות</th>' +
+                '</tr></thead><tbody>';
+            data.forEach(function (item) {
+                var details = getExpenseDetails(item);
+                var typeLabel = TYPE_LABELS[item.type] || item.type;
+                html += '<tr>' +
+                    '<td>' + escapeHtml(item.title) + '</td>' +
+                    '<td><span class="hbm-badge hbm-badge-' + item.type + '">' + typeLabel + '</span></td>' +
+                    '<td>' + escapeHtml(item.payee || '-') + '</td>' +
+                    '<td>' + getCategoryLabel(item.category) + '</td>' +
+                    '<td><strong>' + formatCurrency(getDisplayAmount(item)) + '</strong></td>' +
+                    '<td>' + details + '</td>' +
+                    '<td><button class="hbm-btn hbm-btn-ghost hbm-btn-sm" onclick="hbmApp.editBusinessExpense(' + item.id + ')">✏️</button> ' +
+                    '<button class="hbm-btn hbm-btn-danger hbm-btn-sm" onclick="hbmApp.deleteExpense(' + item.id + ')">🗑️</button></td>' +
+                    '</tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        });
+    }
+
+    function showBusinessIncomeForm(editData) {
+        var isEdit = !!editData;
+        var html = '<form id="hbm-biz-income-form">' +
+            '<div class="hbm-form-group"><label>שם ההכנסה</label>' +
+            '<input type="text" name="title" value="' + escapeHtml(editData ? editData.title : '') + '" required></div>' +
+            '<div class="hbm-form-row">' +
+            '<div class="hbm-form-group"><label>סכום</label>' +
+            '<input type="number" name="amount" value="' + (editData ? editData.amount : '') + '" required></div>' +
+            '<div class="hbm-form-group"><label>מקור</label>' +
+            '<input type="text" name="source" value="' + escapeHtml(editData ? editData.source || '' : '') + '"></div>' +
+            '</div>' +
+            '<div class="hbm-form-row">' +
+            '<div class="hbm-form-group"><label>תאריך התחלה</label>' +
+            '<input type="date" name="start_date" value="' + (editData ? editData.start_date : currentMonth + '-01') + '" required></div>' +
+            '<div class="hbm-form-group"><label>תאריך סיום (אופציונלי)</label>' +
+            '<input type="date" name="end_date" value="' + (editData ? editData.end_date || '' : '') + '"></div>' +
+            '</div>' +
+            '<div class="hbm-form-group"><label><input type="checkbox" name="is_recurring" ' + (editData && editData.is_recurring == 1 ? 'checked' : !editData ? 'checked' : '') + '> הכנסה חוזרת (חודשית)</label></div>' +
+            '<div class="hbm-form-actions">' +
+            '<button type="submit" class="hbm-btn hbm-btn-primary">' + (isEdit ? 'עדכן' : 'הוסף') + '</button>' +
+            '<button type="button" class="hbm-btn hbm-btn-ghost" onclick="hbmApp.closeModal()">ביטול</button>' +
+            '</div></form>';
+
+        openModal(isEdit ? 'עריכת הכנסה עסקית' : 'הוספת הכנסה עסקית', html);
+
+        document.getElementById('hbm-biz-income-form').addEventListener('submit', function (e) {
+            e.preventDefault();
+            var form = e.target;
+            var payload = {
+                title: form.title.value,
+                amount: parseFloat(form.amount.value),
+                source: form.source.value,
+                start_date: form.start_date.value,
+                is_recurring: form.is_recurring.checked ? 1 : 0,
+                is_business: 1,
+            };
+            if (form.end_date.value) payload.end_date = form.end_date.value;
+
+            var method = isEdit ? 'PUT' : 'POST';
+            var endpoint = isEdit ? 'income/' + editData.id : 'income';
+            apiRequest(endpoint, method, payload).then(function (response) {
+                if (response && response.id) {
+                    closeModal();
+                    loadBusinessIncome();
+                    loadBusinessDashboardPage();
+                    loadBusinessDashboard();
+                }
+            });
+        });
+    }
+
+    function showBusinessExpenseForm(editData) {
+        var isEdit = !!editData;
+        var catOptions = '<option value="">ללא קטגוריה</option>';
+        Object.keys(CATEGORIES).forEach(function (key) {
+            var selected = editData && editData.category === key ? 'selected' : '';
+            catOptions += '<option value="' + key + '" ' + selected + '>' + CATEGORIES[key] + '</option>';
         });
 
-        apiRequest('budget-allocations', 'POST', { allocations: allocations }).then(function () {
-            alert('הקצאות התקציב נשמרו בהצלחה!');
-            loadDashboard();
+        var editType = editData ? editData.type : '';
+        if (editType === 'regular') editType = 'one_time';
+
+        var html = '<form id="hbm-biz-expense-form">' +
+            '<div class="hbm-form-group"><label>סוג הוצאה</label>' +
+            '<select name="type" id="hbm-biz-expense-type">' +
+            '<option value="one_time"' + (editType === 'one_time' || !editType ? ' selected' : '') + '>חד פעמי</option>' +
+            '<option value="fixed"' + (editType === 'fixed' ? ' selected' : '') + '>הוצאה קבועה</option>' +
+            '<option value="installment"' + (editType === 'installment' ? ' selected' : '') + '>תשלומים</option>' +
+            '</select></div>' +
+            '<div class="hbm-form-group"><label>שם ההוצאה</label>' +
+            '<input type="text" name="title" value="' + escapeHtml(editData ? editData.title : '') + '" required></div>' +
+            '<div class="hbm-form-row">' +
+            '<div class="hbm-form-group"><label>למי משלמים</label>' +
+            '<input type="text" name="payee" value="' + escapeHtml(editData ? editData.payee || '' : '') + '"></div>' +
+            '<div class="hbm-form-group"><label>קטגוריה</label>' +
+            '<select name="category">' + catOptions + '</select></div>' +
+            '</div>' +
+            '<div class="hbm-form-group"><label>סכום</label>' +
+            '<input type="number" step="0.01" name="amount" value="' + (editData ? editData.amount : '') + '" required></div>' +
+            '<div class="hbm-form-group"><label>תיאור</label>' +
+            '<input type="text" name="description" value="' + escapeHtml(editData ? editData.description || '' : '') + '"></div>' +
+            '<div class="hbm-form-group"><label>תאריך התחלה</label>' +
+            '<input type="date" name="start_date" value="' + (editData ? editData.start_date : currentMonth + '-01') + '" required></div>' +
+
+            '<div id="hbm-biz-credit-card-field" class="hbm-type-fields">' +
+            '<div class="hbm-form-group"><label>כרטיס אשראי עסקי</label>' +
+            '<select name="credit_card_id" id="hbm-biz-expense-cc">' +
+            buildBizCreditCardOptions(editData ? editData.credit_card_id : null) +
+            '</select></div></div>' +
+
+            '<div id="hbm-biz-installment-fields" class="hbm-type-fields">' +
+            '<div class="hbm-form-row">' +
+            '<div class="hbm-form-group"><label>מספר תשלומים</label>' +
+            '<input type="number" name="total_installments" value="' + (editData ? editData.total_installments || '' : '') + '"></div>' +
+            '<div class="hbm-form-group"><label>סכום לתשלום</label>' +
+            '<input type="number" step="0.01" name="installment_amount" value="' + (editData ? editData.installment_amount || '' : '') + '"></div>' +
+            '</div></div>' +
+
+            '<div class="hbm-form-actions">' +
+            '<button type="submit" class="hbm-btn hbm-btn-primary">' + (isEdit ? 'עדכן' : 'הוסף') + '</button>' +
+            '<button type="button" class="hbm-btn hbm-btn-ghost" onclick="hbmApp.closeModal()">ביטול</button>' +
+            '</div></form>';
+
+        openModal(isEdit ? 'עריכת הוצאה עסקית' : 'הוספת הוצאה עסקית', html);
+
+        var bizTypeSelect = document.getElementById('hbm-biz-expense-type');
+        function updateBizExpFields() {
+            var t = bizTypeSelect.value;
+            var ccField = document.getElementById('hbm-biz-credit-card-field');
+            var instFields = document.getElementById('hbm-biz-installment-fields');
+            if (ccField) ccField.classList.toggle('active', t === 'installment' || t === 'one_time');
+            if (instFields) instFields.classList.toggle('active', t === 'installment');
+        }
+        updateBizExpFields();
+        bizTypeSelect.addEventListener('change', updateBizExpFields);
+
+        document.getElementById('hbm-biz-expense-form').addEventListener('submit', function (e) {
+            e.preventDefault();
+            var form = e.target;
+            var type = form.type.value;
+            var payload = {
+                type: type,
+                title: form.title.value,
+                payee: form.payee.value,
+                category: form.category.value,
+                amount: parseFloat(form.amount.value),
+                description: form.description.value,
+                start_date: form.start_date.value,
+                is_business: 1,
+            };
+            if (form.credit_card_id && form.credit_card_id.value) {
+                payload.credit_card_id = form.credit_card_id.value;
+            }
+            if (type === 'installment') {
+                payload.total_installments = parseInt(form.total_installments.value);
+                payload.installment_amount = parseFloat(form.installment_amount.value) || null;
+            }
+
+            var method = isEdit ? 'PUT' : 'POST';
+            var endpoint = isEdit ? 'expenses/' + editData.id : 'expenses';
+            apiRequest(endpoint, method, payload).then(function (response) {
+                if (response && response.id) {
+                    closeModal();
+                    loadBusinessExpenses();
+                    loadBusinessDashboardPage();
+                    loadBusinessDashboard();
+                }
+            });
+        });
+    }
+
+    function buildBizCreditCardOptions(selectedId) {
+        var html = '<option value="">בחר כרטיס אשראי עסקי</option>';
+        bizCreditCards.forEach(function (card) {
+            var sel = selectedId && selectedId == card.id ? ' selected' : '';
+            var label = (card.card_name ? card.card_name + ' - ' : '') + '**** ' + card.last_four + ' (יום חיוב: ' + card.billing_day + ')';
+            html += '<option value="' + card.id + '"' + sel + '>' + label + '</option>';
+        });
+        return html;
+    }
+
+    function buildBizBankAccountOptions(selectedId) {
+        var html = '<option value="">בחר חשבון בנק עסקי</option>';
+        bizBankAccounts.forEach(function (acct) {
+            var sel = selectedId && selectedId == acct.id ? ' selected' : '';
+            var label = acct.bank_name + ' - ***' + acct.last_three;
+            html += '<option value="' + acct.id + '"' + sel + '>' + label + '</option>';
+        });
+        return html;
+    }
+
+    function loadBusinessCashFlowSelector() {
+        var cfSelect = document.getElementById('hbm-biz-cashflow-bank-account');
+        if (!cfSelect) return;
+        cfSelect.innerHTML = buildBizBankAccountOptions();
+        var newSelect = cfSelect.cloneNode(true);
+        cfSelect.parentNode.replaceChild(newSelect, cfSelect);
+        newSelect.innerHTML = buildBizBankAccountOptions();
+        newSelect.addEventListener('change', function () {
+            if (this.value) {
+                loadBusinessCashFlow(this.value);
+            } else {
+                var table = document.getElementById('hbm-biz-cashflow-table');
+                if (table) table.innerHTML = '<div class="hbm-empty-state"><p>בחר חשבון בנק עסקי לצפייה בתזרים</p></div>';
+            }
+        });
+    }
+
+    function loadBusinessCashFlow(bankAccountId) {
+        var container = document.getElementById('hbm-biz-cashflow-table');
+        if (!container) return;
+        container.innerHTML = '<div class="hbm-empty-state"><p>טוען תזרים...</p></div>';
+
+        apiRequest('cash-flow', 'GET', { bank_account_id: bankAccountId, months_ahead: 3, is_business: 1 }).then(function (data) {
+            if (!data || data.error || !Array.isArray(data.entries)) {
+                container.innerHTML = '<div class="hbm-empty-state"><p>אין נתוני תזרים</p></div>';
+                return;
+            }
+            var html = '<table class="hbm-table"><thead><tr>' +
+                '<th>תאריך</th><th>תיאור</th><th>סוג</th><th>סכום</th><th>יתרה</th>' +
+                '</tr></thead><tbody>';
+            data.entries.forEach(function (entry) {
+                var rowClass = entry.is_charge ? ' class="hbm-cashflow-charge-row"' : '';
+                html += '<tr' + rowClass + '>' +
+                    '<td>' + formatDate(entry.date) + '</td>' +
+                    '<td>' + escapeHtml(entry.description) + '</td>' +
+                    '<td>' + escapeHtml(entry.type_label || entry.type || '-') + '</td>' +
+                    '<td><strong>' + formatCurrency(entry.amount) + '</strong></td>' +
+                    '<td>' + formatCurrency(entry.running_balance) + '</td>' +
+                    '</tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        });
+    }
+
+    // Business Credit Cards
+    function loadBusinessCreditCards() {
+        apiRequest('credit-cards', 'GET', { is_business: 1 }).then(function (data) {
+            if (data && !data.error && Array.isArray(data)) {
+                bizCreditCards = data;
+                renderBusinessCreditCardsList();
+            }
+        });
+    }
+
+    function renderBusinessCreditCardsList() {
+        var container = document.getElementById('hbm-biz-credit-cards-list');
+        if (!container) return;
+        if (bizCreditCards.length === 0) {
+            container.innerHTML = '<p class="hbm-empty-hint">לא הוגדרו כרטיסי אשראי עסקיים</p>';
+            return;
+        }
+        var html = '';
+        bizCreditCards.forEach(function (card) {
+            html += '<div class="hbm-settings-item">' +
+                '<span>' + (card.card_name ? escapeHtml(card.card_name) + ' - ' : '') + '**** ' + escapeHtml(card.last_four) + ' | יום חיוב: ' + card.billing_day + '</span>' +
+                '<button class="hbm-btn hbm-btn-danger hbm-btn-sm" onclick="hbmApp.deleteBusinessCreditCard(' + card.id + ')">מחק</button>' +
+                '</div>';
+        });
+        container.innerHTML = html;
+    }
+
+    function addBusinessCreditCard() {
+        var last4 = document.getElementById('hbm-new-biz-cc-last4');
+        var billingDay = document.getElementById('hbm-new-biz-cc-billing-day');
+        var name = document.getElementById('hbm-new-biz-cc-name');
+        if (!last4 || !billingDay || !name) return;
+        if (!last4.value || !billingDay.value || !name.value) { alert('יש למלא שם כרטיס, 4 ספרות אחרונות ויום חיוב'); return; }
+
+        apiRequest('credit-cards', 'POST', {
+            last_four: last4.value,
+            billing_day: parseInt(billingDay.value),
+            card_name: name.value,
+            is_business: 1
+        }).then(function (data) {
+            if (data && data.id) {
+                last4.value = '';
+                billingDay.value = '';
+                name.value = '';
+                loadBusinessCreditCards();
+            } else {
+                alert('שגיאה בשמירת כרטיס אשראי עסקי: ' + (data && data.message ? data.message : 'שגיאה לא ידועה'));
+            }
+        });
+    }
+
+    function deleteBusinessCreditCard(id) {
+        if (!confirm('האם למחוק כרטיס אשראי עסקי זה?')) return;
+        apiRequest('credit-cards/' + id, 'DELETE').then(function () {
+            loadBusinessCreditCards();
+        });
+    }
+
+    // Business Bank Accounts
+    function loadBusinessBankAccounts() {
+        apiRequest('bank-accounts', 'GET', { is_business: 1 }).then(function (data) {
+            if (data && !data.error && Array.isArray(data)) {
+                bizBankAccounts = data;
+                renderBusinessBankAccountsList();
+            }
+        });
+    }
+
+    function renderBusinessBankAccountsList() {
+        var container = document.getElementById('hbm-biz-bank-accounts-list');
+        if (!container) return;
+        if (bizBankAccounts.length === 0) {
+            container.innerHTML = '<p class="hbm-empty-hint">לא הוגדרו חשבונות בנק עסקיים</p>';
+            return;
+        }
+        var html = '';
+        bizBankAccounts.forEach(function (acct) {
+            html += '<div class="hbm-settings-item">' +
+                '<span>' + escapeHtml(acct.bank_name) + ' - ***' + escapeHtml(acct.last_three) +
+                ' | מסגרת: ' + formatCurrency(acct.credit_limit || 0) +
+                ' | יתרה: ' + formatCurrency(acct.initial_balance || 0) + '</span>' +
+                '<div>' +
+                '<button class="hbm-btn hbm-btn-ghost hbm-btn-sm" onclick="hbmApp.editBusinessBankAccount(' + acct.id + ')">ערוך</button> ' +
+                '<button class="hbm-btn hbm-btn-danger hbm-btn-sm" onclick="hbmApp.deleteBusinessBankAccount(' + acct.id + ')">מחק</button>' +
+                '</div></div>';
+        });
+        container.innerHTML = html;
+    }
+
+    function addBusinessBankAccount() {
+        var last3 = document.getElementById('hbm-new-biz-ba-last3');
+        var bankName = document.getElementById('hbm-new-biz-ba-bank-name');
+        var creditLimit = document.getElementById('hbm-new-biz-ba-credit-limit');
+        var initialBalance = document.getElementById('hbm-new-biz-ba-initial-balance');
+        if (!last3 || !bankName) return;
+        if (!last3.value || !bankName.value) { alert('יש למלא 3 ספרות אחרונות ושם בנק'); return; }
+
+        apiRequest('bank-accounts', 'POST', {
+            last_three: last3.value,
+            bank_name: bankName.value,
+            credit_limit: creditLimit ? parseFloat(creditLimit.value) || 0 : 0,
+            initial_balance: initialBalance ? parseFloat(initialBalance.value) || 0 : 0,
+            is_business: 1
+        }).then(function (data) {
+            if (data && data.id) {
+                last3.value = '';
+                bankName.value = '';
+                if (creditLimit) creditLimit.value = '';
+                if (initialBalance) initialBalance.value = '';
+                loadBusinessBankAccounts();
+            } else {
+                alert('שגיאה בשמירת חשבון בנק עסקי: ' + (data && data.message ? data.message : 'שגיאה לא ידועה'));
+            }
+        });
+    }
+
+    function editBusinessBankAccount(id) {
+        var acct = bizBankAccounts.find(function (a) { return a.id == id; });
+        if (!acct) return;
+
+        var html = '<form id="hbm-edit-biz-ba-form">' +
+            '<div class="hbm-form-group"><label>3 ספרות אחרונות</label>' +
+            '<input type="text" name="last_three" value="' + escapeHtml(acct.last_three) + '" maxlength="3" required></div>' +
+            '<div class="hbm-form-group"><label>שם הבנק</label>' +
+            '<input type="text" name="bank_name" value="' + escapeHtml(acct.bank_name) + '" required></div>' +
+            '<div class="hbm-form-row">' +
+            '<div class="hbm-form-group"><label>מסגרת אשראי</label>' +
+            '<input type="number" name="credit_limit" value="' + (acct.credit_limit || 0) + '"></div>' +
+            '<div class="hbm-form-group"><label>יתרה התחלתית</label>' +
+            '<input type="number" name="initial_balance" value="' + (acct.initial_balance || 0) + '"></div>' +
+            '</div>' +
+            '<div class="hbm-form-actions">' +
+            '<button type="submit" class="hbm-btn hbm-btn-primary">עדכן</button>' +
+            '<button type="button" class="hbm-btn hbm-btn-ghost" onclick="hbmApp.closeModal()">ביטול</button>' +
+            '</div></form>';
+
+        openModal('עריכת חשבון בנק עסקי', html);
+
+        document.getElementById('hbm-edit-biz-ba-form').addEventListener('submit', function (e) {
+            e.preventDefault();
+            var form = e.target;
+            apiRequest('bank-accounts/' + id, 'PUT', {
+                last_three: form.last_three.value,
+                bank_name: form.bank_name.value,
+                credit_limit: parseFloat(form.credit_limit.value) || 0,
+                initial_balance: parseFloat(form.initial_balance.value) || 0
+            }).then(function (data) {
+                if (data && data.id) {
+                    closeModal();
+                    loadBusinessBankAccounts();
+                }
+            });
+        });
+    }
+
+    function deleteBusinessBankAccount(id) {
+        if (!confirm('האם למחוק חשבון בנק עסקי זה?')) return;
+        apiRequest('bank-accounts/' + id, 'DELETE').then(function () {
+            loadBusinessBankAccounts();
         });
     }
 
@@ -1458,9 +2043,13 @@
             container.innerHTML = html;
         }
 
-        // Render credit cards and bank accounts (they load independently)
         renderCreditCardsList();
         renderBankAccountsList();
+
+        if (userType === 'self_employed') {
+            loadBusinessCreditCards();
+            loadBusinessBankAccounts();
+        }
     }
 
     function addCategory() {
@@ -1569,6 +2158,58 @@
         },
         updateCollectionStatus: updateCollectionStatus,
         deleteCollection: deleteCollection,
+        // Allocations
+        showAllocationForm: function (id) {
+            if (id) {
+                var a = allocations.find(function (x) { return x.id == id; });
+                if (a) showAllocationForm(a);
+            } else {
+                showAllocationForm();
+            }
+        },
+        editAllocation: function (id) {
+            var a = allocations.find(function (x) { return x.id == id; });
+            if (a) showAllocationForm(a);
+        },
+        deleteAllocation: deleteAllocation,
+        // Business
+        showBusinessIncomeForm: function (id) {
+            if (id) {
+                apiRequest('income', 'GET', { month: currentMonth, is_business: 1 }).then(function (data) {
+                    var item = data.find(function (i) { return i.id == id; });
+                    if (item) showBusinessIncomeForm(item);
+                });
+            } else {
+                showBusinessIncomeForm();
+            }
+        },
+        editBusinessIncome: function (id) {
+            apiRequest('income', 'GET', { month: currentMonth, is_business: 1 }).then(function (data) {
+                var item = data.find(function (i) { return i.id == id; });
+                if (item) showBusinessIncomeForm(item);
+            });
+        },
+        showBusinessExpenseForm: function (id) {
+            if (id) {
+                apiRequest('expenses', 'GET', { month: currentMonth, is_business: 1 }).then(function (data) {
+                    var item = data.find(function (i) { return i.id == id; });
+                    if (item) showBusinessExpenseForm(item);
+                });
+            } else {
+                showBusinessExpenseForm();
+            }
+        },
+        editBusinessExpense: function (id) {
+            apiRequest('expenses', 'GET', { month: currentMonth, is_business: 1 }).then(function (data) {
+                var item = data.find(function (i) { return i.id == id; });
+                if (item) showBusinessExpenseForm(item);
+            });
+        },
+        addBusinessCreditCard: addBusinessCreditCard,
+        deleteBusinessCreditCard: deleteBusinessCreditCard,
+        addBusinessBankAccount: addBusinessBankAccount,
+        editBusinessBankAccount: editBusinessBankAccount,
+        deleteBusinessBankAccount: deleteBusinessBankAccount,
     };
 
     if (document.readyState === 'loading') {

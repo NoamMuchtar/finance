@@ -34,7 +34,11 @@ class HBM_API {
         // Budget Allocations
         register_rest_route($namespace, '/budget-allocations', [
             ['methods' => 'GET', 'callback' => [__CLASS__, 'get_allocations'], 'permission_callback' => [__CLASS__, 'check_auth']],
-            ['methods' => 'POST', 'callback' => [__CLASS__, 'save_allocations'], 'permission_callback' => [__CLASS__, 'check_auth']],
+            ['methods' => 'POST', 'callback' => [__CLASS__, 'create_allocation'], 'permission_callback' => [__CLASS__, 'check_auth']],
+        ]);
+        register_rest_route($namespace, '/budget-allocations/(?P<id>\d+)', [
+            ['methods' => WP_REST_Server::EDITABLE, 'callback' => [__CLASS__, 'update_allocation'], 'permission_callback' => [__CLASS__, 'check_auth']],
+            ['methods' => WP_REST_Server::DELETABLE, 'callback' => [__CLASS__, 'delete_allocation'], 'permission_callback' => [__CLASS__, 'check_auth']],
         ]);
 
         // Dashboard
@@ -122,6 +126,16 @@ class HBM_API {
         register_rest_route($namespace, '/cash-flow', [
             ['methods' => 'GET', 'callback' => [__CLASS__, 'get_cash_flow'], 'permission_callback' => [__CLASS__, 'check_auth']],
         ]);
+
+        // Business Dashboard
+        register_rest_route($namespace, '/business-dashboard', [
+            ['methods' => 'GET', 'callback' => [__CLASS__, 'get_business_dashboard'], 'permission_callback' => [__CLASS__, 'check_auth']],
+        ]);
+
+        // Overdraft Check
+        register_rest_route($namespace, '/overdraft-check', [
+            ['methods' => 'GET', 'callback' => [__CLASS__, 'check_overdraft'], 'permission_callback' => [__CLASS__, 'check_auth']],
+        ]);
     }
 
     public static function check_auth() {
@@ -137,16 +151,21 @@ class HBM_API {
         $user_id = get_current_user_id();
         $month = sanitize_text_field($request->get_param('month') ?? date('Y-m'));
 
-        $results = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}hbm_income
+        $query = "SELECT * FROM {$wpdb->prefix}hbm_income
              WHERE user_id = %d
              AND start_date <= LAST_DAY(%s)
-             AND (end_date IS NULL OR end_date >= %s)
-             ORDER BY created_at DESC",
-            $user_id,
-            $month . '-01',
-            $month . '-01'
-        ));
+             AND (end_date IS NULL OR end_date >= %s)";
+        $query_args = [$user_id, $month . '-01', $month . '-01'];
+
+        $is_business = $request->get_param('is_business');
+        if ($is_business !== null && $is_business !== '') {
+            $query .= " AND is_business = %d";
+            $query_args[] = intval($is_business);
+        }
+
+        $query .= " ORDER BY created_at DESC";
+
+        $results = $wpdb->get_results($wpdb->prepare($query, $query_args));
 
         return rest_ensure_response($results);
     }
@@ -166,6 +185,7 @@ class HBM_API {
             'amount' => floatval($params['amount'] ?? 0),
             'source' => sanitize_text_field($params['source'] ?? ''),
             'is_recurring' => intval($params['is_recurring'] ?? 1),
+            'is_business' => intval($params['is_business'] ?? 0),
             'start_date' => sanitize_text_field($params['start_date'] ?? date('Y-m-d')),
         ];
 
@@ -246,6 +266,11 @@ class HBM_API {
             $where .= $wpdb->prepare(" AND type = %s", $type);
         }
 
+        $is_business = $request->get_param('is_business');
+        if ($is_business !== null && $is_business !== '') {
+            $where .= $wpdb->prepare(" AND is_business = %d", intval($is_business));
+        }
+
         $results = $wpdb->get_results(
             "SELECT * FROM {$wpdb->prefix}hbm_expenses $where ORDER BY created_at DESC"
         );
@@ -304,6 +329,16 @@ class HBM_API {
             'is_recurring' => 0,
             'start_date' => $start_date,
         ];
+
+        // Handle is_business
+        $data['is_business'] = intval($params['is_business'] ?? 0);
+
+        // Handle allocation_id
+        $allocation_id = null;
+        if (!empty($params['allocation_id'])) {
+            $allocation_id = intval($params['allocation_id']);
+            $data['allocation_id'] = $allocation_id;
+        }
 
         // Handle credit_card_id
         if (isset($params['credit_card_id']) && $params['credit_card_id'] !== '' && $params['credit_card_id'] !== null) {
@@ -392,6 +427,15 @@ class HBM_API {
 
         $data['id'] = $wpdb->insert_id;
 
+        // Update allocation used_amount if allocation_id is provided
+        if (!empty($allocation_id)) {
+            $expense_amount = floatval($data['amount']);
+            $wpdb->query($wpdb->prepare(
+                "UPDATE {$wpdb->prefix}hbm_budget_allocations SET used_amount = used_amount + %f WHERE id = %d AND user_id = %d",
+                $expense_amount, $allocation_id, $user_id
+            ));
+        }
+
         return rest_ensure_response($data);
     }
 
@@ -454,6 +498,19 @@ class HBM_API {
         $user_id = get_current_user_id();
         $id = intval($request->get_param('id'));
 
+        // Check if the expense has an allocation_id and subtract from used_amount
+        $expense = $wpdb->get_row($wpdb->prepare(
+            "SELECT amount, allocation_id FROM {$wpdb->prefix}hbm_expenses WHERE id = %d AND user_id = %d",
+            $id, $user_id
+        ));
+
+        if ($expense && !empty($expense->allocation_id)) {
+            $wpdb->query($wpdb->prepare(
+                "UPDATE {$wpdb->prefix}hbm_budget_allocations SET used_amount = used_amount - %f WHERE id = %d AND user_id = %d",
+                floatval($expense->amount), intval($expense->allocation_id), $user_id
+            ));
+        }
+
         $wpdb->delete("{$wpdb->prefix}hbm_expenses", ['id' => $id, 'user_id' => $user_id]);
 
         return rest_ensure_response(['success' => true]);
@@ -468,51 +525,98 @@ class HBM_API {
         $user_id = get_current_user_id();
 
         $results = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}hbm_budget_allocations WHERE user_id = %d AND is_active = 1",
+            "SELECT id, label, amount, used_amount, deduction_date, is_active
+             FROM {$wpdb->prefix}hbm_budget_allocations
+             WHERE user_id = %d
+             ORDER BY created_at DESC",
             $user_id
         ));
 
         return rest_ensure_response($results);
     }
 
-    public static function save_allocations($request) {
+    public static function create_allocation($request) {
         global $wpdb;
         $user_id = get_current_user_id();
+
         $params = $request->get_json_params();
         if (empty($params)) {
             $params = $request->get_params();
         }
-        $allocations = $params['allocations'] ?? null;
 
-        if (!is_array($allocations)) {
-            return new WP_Error('invalid_data', 'נתונים לא תקינים', ['status' => 400]);
+        $label = sanitize_text_field($params['label'] ?? '');
+        $amount = floatval($params['amount'] ?? 0);
+
+        if (empty($label) || $amount <= 0) {
+            return new WP_Error('missing_data', 'חסרים נתונים חובה (תווית, סכום)', ['status' => 400]);
         }
 
-        foreach ($allocations as $allocation) {
-            $category = sanitize_text_field($allocation['category']);
-            $amount = floatval($allocation['amount']);
+        $data = [
+            'user_id' => $user_id,
+            'label' => $label,
+            'amount' => $amount,
+            'is_active' => intval($params['is_active'] ?? 1),
+        ];
 
-            $existing = $wpdb->get_var($wpdb->prepare(
-                "SELECT id FROM {$wpdb->prefix}hbm_budget_allocations WHERE user_id = %d AND category = %s",
-                $user_id,
-                $category
-            ));
-
-            if ($existing) {
-                $wpdb->update(
-                    "{$wpdb->prefix}hbm_budget_allocations",
-                    ['amount' => $amount, 'is_active' => 1],
-                    ['id' => $existing]
-                );
-            } else {
-                $wpdb->insert("{$wpdb->prefix}hbm_budget_allocations", [
-                    'user_id' => $user_id,
-                    'category' => $category,
-                    'amount' => $amount,
-                    'is_active' => 1,
-                ]);
-            }
+        if (!empty($params['deduction_date'])) {
+            $data['deduction_date'] = sanitize_text_field($params['deduction_date']);
         }
+
+        $result = $wpdb->insert("{$wpdb->prefix}hbm_budget_allocations", $data);
+
+        if ($result === false) {
+            return new WP_Error('db_error', 'שגיאה בשמירת הנתונים: ' . $wpdb->last_error, ['status' => 500]);
+        }
+
+        $data['id'] = $wpdb->insert_id;
+        return rest_ensure_response($data);
+    }
+
+    public static function update_allocation($request) {
+        global $wpdb;
+        $user_id = get_current_user_id();
+        $id = intval($request->get_param('id'));
+
+        $params = $request->get_json_params();
+        if (empty($params)) {
+            $params = $request->get_params();
+        }
+
+        $data = [];
+
+        if (isset($params['label'])) $data['label'] = sanitize_text_field($params['label']);
+        if (isset($params['amount'])) $data['amount'] = floatval($params['amount']);
+        if (array_key_exists('deduction_date', $params)) $data['deduction_date'] = $params['deduction_date'] ? sanitize_text_field($params['deduction_date']) : null;
+        if (isset($params['is_active'])) $data['is_active'] = intval($params['is_active']);
+
+        if (empty($data)) {
+            return new WP_Error('missing_data', 'אין נתונים לעדכון', ['status' => 400]);
+        }
+
+        $wpdb->update("{$wpdb->prefix}hbm_budget_allocations", $data, ['id' => $id, 'user_id' => $user_id]);
+
+        $updated = $wpdb->get_row($wpdb->prepare(
+            "SELECT id, label, amount, used_amount, deduction_date, is_active
+             FROM {$wpdb->prefix}hbm_budget_allocations
+             WHERE id = %d AND user_id = %d",
+            $id, $user_id
+        ));
+
+        return rest_ensure_response($updated);
+    }
+
+    public static function delete_allocation($request) {
+        global $wpdb;
+        $user_id = get_current_user_id();
+        $id = intval($request->get_param('id'));
+
+        // Set allocation_id = NULL on any expenses that referenced this allocation
+        $wpdb->query($wpdb->prepare(
+            "UPDATE {$wpdb->prefix}hbm_expenses SET allocation_id = NULL WHERE allocation_id = %d AND user_id = %d",
+            $id, $user_id
+        ));
+
+        $wpdb->delete("{$wpdb->prefix}hbm_budget_allocations", ['id' => $id, 'user_id' => $user_id]);
 
         return rest_ensure_response(['success' => true]);
     }
@@ -655,10 +759,18 @@ class HBM_API {
         global $wpdb;
         $user_id = get_current_user_id();
 
-        $results = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}hbm_credit_cards WHERE user_id = %d ORDER BY created_at DESC",
-            $user_id
-        ));
+        $query = "SELECT * FROM {$wpdb->prefix}hbm_credit_cards WHERE user_id = %d";
+        $query_args = [$user_id];
+
+        $is_business = $request->get_param('is_business');
+        if ($is_business !== null && $is_business !== '') {
+            $query .= " AND is_business = %d";
+            $query_args[] = intval($is_business);
+        }
+
+        $query .= " ORDER BY created_at DESC";
+
+        $results = $wpdb->get_results($wpdb->prepare($query, $query_args));
 
         return rest_ensure_response($results);
     }
@@ -677,6 +789,7 @@ class HBM_API {
             'last_four' => sanitize_text_field($params['last_four'] ?? ''),
             'card_name' => sanitize_text_field($params['card_name'] ?? ''),
             'billing_day' => intval($params['billing_day'] ?? 1),
+            'is_business' => intval($params['is_business'] ?? 0),
         ];
 
         if (empty($data['last_four']) || empty($data['card_name'])) {
@@ -711,10 +824,18 @@ class HBM_API {
         global $wpdb;
         $user_id = get_current_user_id();
 
-        $results = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}hbm_bank_accounts WHERE user_id = %d ORDER BY created_at DESC",
-            $user_id
-        ));
+        $query = "SELECT * FROM {$wpdb->prefix}hbm_bank_accounts WHERE user_id = %d";
+        $query_args = [$user_id];
+
+        $is_business = $request->get_param('is_business');
+        if ($is_business !== null && $is_business !== '') {
+            $query .= " AND is_business = %d";
+            $query_args[] = intval($is_business);
+        }
+
+        $query .= " ORDER BY created_at DESC";
+
+        $results = $wpdb->get_results($wpdb->prepare($query, $query_args));
 
         return rest_ensure_response($results);
     }
@@ -734,6 +855,7 @@ class HBM_API {
             'bank_name' => sanitize_text_field($params['bank_name'] ?? ''),
             'credit_limit' => floatval($params['credit_limit'] ?? 0),
             'initial_balance' => floatval($params['initial_balance'] ?? 0),
+            'is_business' => intval($params['is_business'] ?? 0),
         ];
 
         if (empty($data['last_three']) || empty($data['bank_name'])) {
@@ -1213,6 +1335,9 @@ class HBM_API {
         $user_id = get_current_user_id();
         $bank_account_id = intval($request->get_param('bank_account_id') ?? 0);
         $months_ahead = intval($request->get_param('months_ahead') ?? 3);
+        $is_business_param = $request->get_param('is_business');
+        $filter_business = ($is_business_param !== null && $is_business_param !== '');
+        $is_business_val = $filter_business ? intval($is_business_param) : null;
 
         if ($bank_account_id <= 0) {
             return new WP_Error('missing_data', 'חסר מזהה חשבון בנק', ['status' => 400]);
@@ -1236,11 +1361,14 @@ class HBM_API {
 
         // 1. Past transactions affecting this bank account
         // Bank transfer expenses
-        $past_expenses = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}hbm_expenses
-             WHERE user_id = %d AND bank_account_id = %d AND start_date <= %s",
-            $user_id, $bank_account_id, $today
-        ));
+        $past_exp_query = "SELECT * FROM {$wpdb->prefix}hbm_expenses
+             WHERE user_id = %d AND bank_account_id = %d AND start_date <= %s";
+        $past_exp_args = [$user_id, $bank_account_id, $today];
+        if ($filter_business) {
+            $past_exp_query .= " AND is_business = %d";
+            $past_exp_args[] = $is_business_val;
+        }
+        $past_expenses = $wpdb->get_results($wpdb->prepare($past_exp_query, $past_exp_args));
 
         foreach ($past_expenses as $exp) {
             if ($exp->type === 'one_time') {
@@ -1382,12 +1510,15 @@ class HBM_API {
         }
 
         // Future loan payments
-        $future_loans = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}hbm_expenses
+        $future_loans_query = "SELECT * FROM {$wpdb->prefix}hbm_expenses
              WHERE user_id = %d AND bank_account_id = %d AND type = 'loan'
-             AND (loan_end_date IS NULL OR loan_end_date >= %s)",
-            $user_id, $bank_account_id, $tomorrow
-        ));
+             AND (loan_end_date IS NULL OR loan_end_date >= %s)";
+        $future_loans_args = [$user_id, $bank_account_id, $tomorrow];
+        if ($filter_business) {
+            $future_loans_query .= " AND is_business = %d";
+            $future_loans_args[] = $is_business_val;
+        }
+        $future_loans = $wpdb->get_results($wpdb->prepare($future_loans_query, $future_loans_args));
 
         foreach ($future_loans as $loan) {
             $monthly = floatval($loan->monthly_return);
@@ -1414,13 +1545,16 @@ class HBM_API {
         }
 
         // Future installment payments (via credit card billing dates)
-        $future_installments = $wpdb->get_results($wpdb->prepare(
-            "SELECT e.*, cc.billing_day FROM {$wpdb->prefix}hbm_expenses e
+        $future_inst_query = "SELECT e.*, cc.billing_day FROM {$wpdb->prefix}hbm_expenses e
              LEFT JOIN {$wpdb->prefix}hbm_credit_cards cc ON e.credit_card_id = cc.id
              WHERE e.user_id = %d AND e.bank_account_id = %d AND e.type = 'installment'
-             AND (e.end_date IS NULL OR e.end_date >= %s)",
-            $user_id, $bank_account_id, $tomorrow
-        ));
+             AND (e.end_date IS NULL OR e.end_date >= %s)";
+        $future_inst_args = [$user_id, $bank_account_id, $tomorrow];
+        if ($filter_business) {
+            $future_inst_query .= " AND e.is_business = %d";
+            $future_inst_args[] = $is_business_val;
+        }
+        $future_installments = $wpdb->get_results($wpdb->prepare($future_inst_query, $future_inst_args));
 
         foreach ($future_installments as $inst) {
             $inst_amount = floatval($inst->installment_amount ?: ($inst->amount / $inst->total_installments));
@@ -1459,12 +1593,15 @@ class HBM_API {
         }
 
         // Future savings
-        $future_savings = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}hbm_expenses
+        $future_sav_query = "SELECT * FROM {$wpdb->prefix}hbm_expenses
              WHERE user_id = %d AND bank_account_id = %d AND type = 'saving'
-             AND (end_date IS NULL OR end_date >= %s)",
-            $user_id, $bank_account_id, $tomorrow
-        ));
+             AND (end_date IS NULL OR end_date >= %s)";
+        $future_sav_args = [$user_id, $bank_account_id, $tomorrow];
+        if ($filter_business) {
+            $future_sav_query .= " AND is_business = %d";
+            $future_sav_args[] = $is_business_val;
+        }
+        $future_savings = $wpdb->get_results($wpdb->prepare($future_sav_query, $future_sav_args));
 
         foreach ($future_savings as $saving) {
             $current = new DateTime(max($saving->start_date, $tomorrow));
@@ -1504,6 +1641,107 @@ class HBM_API {
             'current_balance' => $running_balance,
             'entries' => $entries,
         ]);
+    }
+
+    // =========================================================================
+    // Business Dashboard
+    // =========================================================================
+
+    public static function get_business_dashboard($request) {
+        global $wpdb;
+        $user_id = get_current_user_id();
+        $month = sanitize_text_field($request->get_param('month') ?? date('Y-m'));
+        $month_start = $month . '-01';
+        $month_end = date('Y-m-t', strtotime($month_start));
+
+        // Total business income for this month
+        $income = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}hbm_income
+             WHERE user_id = %d AND is_business = 1
+             AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)",
+            $user_id, $month_end, $month_start
+        ));
+
+        $total_income = 0;
+        foreach ($income as $item) {
+            $total_income += floatval($item->amount);
+        }
+
+        // Total business expenses for this month (using same logic as dashboard)
+        $expenses = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}hbm_expenses
+             WHERE user_id = %d AND is_business = 1
+             AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)",
+            $user_id, $month_end, $month_start
+        ));
+
+        $total_expenses = 0;
+        foreach ($expenses as $expense) {
+            $monthly_amount = self::get_monthly_amount($expense, $month_start);
+            if ($monthly_amount <= 0) continue;
+            $total_expenses += $monthly_amount;
+        }
+
+        $available_salary = $total_income - $total_expenses;
+
+        return rest_ensure_response([
+            'total_income' => $total_income,
+            'total_expenses' => $total_expenses,
+            'available_salary' => $available_salary,
+            'month' => $month,
+        ]);
+    }
+
+    // =========================================================================
+    // Overdraft Check
+    // =========================================================================
+
+    public static function check_overdraft($request) {
+        global $wpdb;
+        $user_id = get_current_user_id();
+
+        // Get all bank accounts for the user
+        $bank_accounts = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}hbm_bank_accounts WHERE user_id = %d",
+            $user_id
+        ));
+
+        $warnings = [];
+
+        foreach ($bank_accounts as $account) {
+            // Build a fake request to call get_cash_flow for each bank account
+            $cf_request = new WP_REST_Request('GET');
+            $cf_request->set_param('bank_account_id', $account->id);
+            $cf_request->set_param('months_ahead', 3);
+
+            $cf_response = self::get_cash_flow($cf_request);
+            $cf_data = $cf_response->get_data();
+
+            if (is_wp_error($cf_data) || empty($cf_data['entries'])) {
+                continue;
+            }
+
+            $credit_limit = floatval($account->credit_limit);
+
+            foreach ($cf_data['entries'] as $entry) {
+                $running_balance = floatval($entry['running_balance']);
+                if ($running_balance < -$credit_limit) {
+                    $warnings[] = [
+                        'bank_account_id' => intval($account->id),
+                        'bank_name' => $account->bank_name,
+                        'last_three' => $account->last_three,
+                        'is_business' => intval($account->is_business ?? 0),
+                        'overdraft_date' => $entry['date'],
+                        'projected_balance' => $running_balance,
+                        'credit_limit' => $credit_limit,
+                    ];
+                    // Only report the first overdraft per account
+                    break;
+                }
+            }
+        }
+
+        return rest_ensure_response($warnings);
     }
 
     // =========================================================================

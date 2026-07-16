@@ -2341,3 +2341,127 @@
     opacity: 0.7;
     margin-left: 2px;
 }
+
+/* ============================================
+   Overdraft Warning Alert
+   ============================================ */
+.hbm-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px 20px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    animation: fadeIn 0.3s ease;
+}
+
+.hbm-alert-danger {
+    background: linear-gradient(135deg, #fef2f2, #fee2e2);
+    border: 1px solid #fca5a5;
+    color: #991b1b;
+}
+
+.hbm-alert-icon {
+    font-size: 24px;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.hbm-alert-content {
+    flex: 1;
+}
+
+.hbm-alert-content strong {
+    display: block;
+    font-size: 16px;
+    margin-bottom: 8px;
+    color: #b91c1c;
+}
+
+.hbm-alert-content p {
+    margin: 4px 0;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+/* ============================================
+   Allocation List Styles
+   ============================================ */
+.hbm-allocation-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 12px;
+    transition: box-shadow 0.2s;
+}
+
+.hbm-allocation-card:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.hbm-allocation-info {
+    flex: 1;
+}
+
+.hbm-allocation-label {
+    font-weight: 600;
+    font-size: 15px;
+    margin-bottom: 4px;
+}
+
+.hbm-allocation-meta {
+    font-size: 13px;
+    color: #64748b;
+}
+
+.hbm-allocation-bar {
+    width: 200px;
+    flex-shrink: 0;
+}
+
+.hbm-allocation-bar-track {
+    height: 8px;
+    background: #e2e8f0;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.hbm-allocation-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: var(--hbm-primary, #3b82f6);
+    transition: width 0.5s ease;
+}
+
+.hbm-allocation-bar-fill.over-budget {
+    background: var(--hbm-danger, #ef4444);
+}
+
+.hbm-allocation-bar-fill.warning {
+    background: var(--hbm-warning, #f59e0b);
+}
+
+.hbm-allocation-amounts {
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 4px;
+    text-align: left;
+    direction: ltr;
+}
+
+.hbm-allocation-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.hbm-allocation-details {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: #64748b;
+    margin-bottom: 8px;
+}

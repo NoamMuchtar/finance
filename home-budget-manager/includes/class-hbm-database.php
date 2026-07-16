@@ -21,6 +21,7 @@ class HBM_Database {
             is_recurring tinyint(1) DEFAULT 1,
             start_date date NOT NULL,
             end_date date DEFAULT NULL,
+            is_business tinyint(1) DEFAULT 0,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -48,6 +49,8 @@ class HBM_Database {
             bank_account_id bigint(20) unsigned DEFAULT NULL,
             payment_method enum('credit','bank_transfer','check','cash') DEFAULT NULL,
             loan_payment_day int DEFAULT NULL,
+            is_business tinyint(1) DEFAULT 0,
+            allocation_id bigint(20) unsigned DEFAULT NULL,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -60,13 +63,15 @@ class HBM_Database {
         $tables[] = "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}hbm_budget_allocations (
             id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
             user_id bigint(20) unsigned NOT NULL,
-            category varchar(100) NOT NULL,
+            label varchar(255) NOT NULL,
             amount decimal(12,2) NOT NULL,
+            used_amount decimal(12,2) DEFAULT 0.00,
+            deduction_date date DEFAULT NULL,
             is_active tinyint(1) DEFAULT 1,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
-            UNIQUE KEY user_category (user_id, category)
+            KEY user_id (user_id)
         ) $charset_collate;";
 
         $tables[] = "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}hbm_settings (
@@ -84,6 +89,7 @@ class HBM_Database {
             last_four varchar(4) NOT NULL,
             card_name varchar(255) NOT NULL,
             billing_day int NOT NULL,
+            is_business tinyint(1) DEFAULT 0,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY user_id (user_id)
@@ -96,6 +102,7 @@ class HBM_Database {
             bank_name varchar(255) NOT NULL,
             credit_limit decimal(12,2) DEFAULT 0.00,
             initial_balance decimal(12,2) DEFAULT 0.00,
+            is_business tinyint(1) DEFAULT 0,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY user_id (user_id)
@@ -171,6 +178,7 @@ class HBM_Database {
 
         self::seed_categories();
         self::maybe_alter_expenses_table();
+        self::maybe_alter_other_tables();
     }
 
     /**
@@ -205,11 +213,70 @@ class HBM_Database {
             $wpdb->query("ALTER TABLE {$table} ADD COLUMN loan_payment_day int DEFAULT NULL AFTER payment_method");
         }
 
+        // Add is_business if not exists
+        $col = $wpdb->get_results("SHOW COLUMNS FROM {$table} LIKE 'is_business'");
+        if (empty($col)) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN is_business tinyint(1) DEFAULT 0 AFTER loan_payment_day");
+        }
+
+        // Add allocation_id if not exists
+        $col = $wpdb->get_results("SHOW COLUMNS FROM {$table} LIKE 'allocation_id'");
+        if (empty($col)) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN allocation_id bigint(20) unsigned DEFAULT NULL AFTER is_business");
+        }
+
         // Update type enum: replace 'regular' with 'one_time'
         $wpdb->query("ALTER TABLE {$table} MODIFY COLUMN type enum('fixed','installment','loan','saving','one_time') NOT NULL DEFAULT 'one_time'");
 
         // Migrate existing 'regular' rows (if any leftover from before enum change)
         $wpdb->query("UPDATE {$table} SET type = 'one_time' WHERE type = 'regular' OR type = ''");
+    }
+
+    /**
+     * Alter other existing tables to add new columns for upgrades from older versions.
+     */
+    private static function maybe_alter_other_tables() {
+        global $wpdb;
+
+        // Add is_business to credit_cards if not exists
+        $table = "{$wpdb->prefix}hbm_credit_cards";
+        $col = $wpdb->get_results("SHOW COLUMNS FROM {$table} LIKE 'is_business'");
+        if (empty($col)) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN is_business tinyint(1) DEFAULT 0 AFTER billing_day");
+        }
+
+        // Add is_business to bank_accounts if not exists
+        $table = "{$wpdb->prefix}hbm_bank_accounts";
+        $col = $wpdb->get_results("SHOW COLUMNS FROM {$table} LIKE 'is_business'");
+        if (empty($col)) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN is_business tinyint(1) DEFAULT 0 AFTER initial_balance");
+        }
+
+        // Add is_business to income if not exists
+        $table = "{$wpdb->prefix}hbm_income";
+        $col = $wpdb->get_results("SHOW COLUMNS FROM {$table} LIKE 'is_business'");
+        if (empty($col)) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN is_business tinyint(1) DEFAULT 0 AFTER end_date");
+        }
+
+        // Alter budget_allocations: add label if not exists
+        $table = "{$wpdb->prefix}hbm_budget_allocations";
+        $col = $wpdb->get_results("SHOW COLUMNS FROM {$table} LIKE 'label'");
+        if (empty($col)) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN label varchar(255) NOT NULL AFTER user_id");
+        }
+
+        // Add used_amount if not exists
+        $col = $wpdb->get_results("SHOW COLUMNS FROM {$table} LIKE 'used_amount'");
+        if (empty($col)) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN used_amount decimal(12,2) DEFAULT 0.00 AFTER amount");
+        }
+
+        // Add deduction_date if not exists
+        $col = $wpdb->get_results("SHOW COLUMNS FROM {$table} LIKE 'deduction_date'");
+        if (empty($col)) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN deduction_date date DEFAULT NULL AFTER used_amount");
+        }
     }
 
     private static function seed_categories() {
