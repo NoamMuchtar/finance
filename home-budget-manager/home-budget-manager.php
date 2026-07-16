@@ -22,8 +22,23 @@ require_once HBM_PLUGIN_DIR . 'includes/class-hbm-access-control.php';
 require_once HBM_PLUGIN_DIR . 'includes/class-hbm-api.php';
 require_once HBM_PLUGIN_DIR . 'includes/class-hbm-dashboard.php';
 require_once HBM_PLUGIN_DIR . 'includes/class-hbm-admin.php';
+require_once HBM_PLUGIN_DIR . 'includes/class-hbm-template.php';
 
-register_activation_hook(__FILE__, ['HBM_Database', 'create_tables']);
+register_activation_hook(__FILE__, function () {
+    HBM_Database::create_tables();
+    if (!wp_next_scheduled('hbm_check_reserved_payments')) {
+        wp_schedule_event(time(), 'daily', 'hbm_check_reserved_payments');
+    }
+});
+
+register_deactivation_hook(__FILE__, function () {
+    $timestamp = wp_next_scheduled('hbm_check_reserved_payments');
+    if ($timestamp) {
+        wp_unschedule_event($timestamp, 'hbm_check_reserved_payments');
+    }
+});
+
+add_action('hbm_check_reserved_payments', ['HBM_API', 'check_reserved_payments_email']);
 
 class Home_Budget_Manager {
     private static $instance = null;
@@ -44,6 +59,8 @@ class Home_Budget_Manager {
 
         $access_control = new HBM_Access_Control();
         $access_control->init();
+
+        new HBM_Template();
     }
 
     public function init() {
