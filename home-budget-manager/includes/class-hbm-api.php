@@ -1449,7 +1449,7 @@ class HBM_API {
                 $current = clone $start;
                 while ($current <= $end_dt) {
                     $entry_date = $current->format('Y-m-d');
-                    if ($entry_date > $balance_date && $entry_date <= $end_date) {
+                    if ($entry_date >= $balance_date && $entry_date <= $end_date) {
                         $entries[] = [
                             'date' => $entry_date,
                             'description' => $inc->title,
@@ -1462,7 +1462,7 @@ class HBM_API {
                     $current->modify('+1 month');
                 }
             } else {
-                if ($inc->start_date > $balance_date && $inc->start_date <= $end_date) {
+                if ($inc->start_date >= $balance_date && $inc->start_date <= $end_date) {
                     $entries[] = [
                         'date' => $inc->start_date,
                         'description' => $inc->title,
@@ -1487,7 +1487,7 @@ class HBM_API {
 
         foreach ($past_expenses as $exp) {
             if ($exp->type === 'one_time') {
-                if ($exp->start_date > $balance_date) {
+                if ($exp->start_date >= $balance_date) {
                     $entries[] = [
                         'date' => $exp->start_date,
                         'description' => $exp->title,
@@ -1502,7 +1502,7 @@ class HBM_API {
                 $current = clone $start;
                 while ($current <= $end_dt) {
                     $entry_date = $current->format('Y-m-d');
-                    if ($entry_date > $balance_date) {
+                    if ($entry_date >= $balance_date) {
                         $entries[] = [
                             'date' => $entry_date,
                             'description' => $exp->title,
@@ -1521,7 +1521,7 @@ class HBM_API {
                 while ($current <= $end_dt && $monthly > 0) {
                     $pay_day = $exp->loan_payment_day ? intval($exp->loan_payment_day) : intval($current->format('d'));
                     $payment_date = $current->format('Y-m') . '-' . sprintf('%02d', min($pay_day, intval(date('t', strtotime($current->format('Y-m-01'))))));
-                    if ($payment_date > $balance_date) {
+                    if ($payment_date >= $balance_date) {
                         $entries[] = [
                             'date' => $payment_date,
                             'description' => $exp->title,
@@ -1540,7 +1540,7 @@ class HBM_API {
                     $pay_dt->modify("+{$i} months");
                     $pdate = $pay_dt->format('Y-m-d');
                     if ($pdate > $today) break;
-                    if ($pdate > $balance_date) {
+                    if ($pdate >= $balance_date) {
                         $entries[] = [
                             'date' => $pdate,
                             'description' => $exp->title . " (תשלום " . ($i + 1) . "/" . $exp->total_installments . ")",
@@ -1569,7 +1569,7 @@ class HBM_API {
                 $days_in = intval(date('t', strtotime($current->format('Y-m-01'))));
                 $actual_day = min($dom, $days_in);
                 $order_date = $current->format('Y-m') . '-' . sprintf('%02d', $actual_day);
-                if ($order_date <= $today && $order_date > $balance_date) {
+                if ($order_date <= $today && $order_date >= $balance_date) {
                     $entries[] = [
                         'date' => $order_date,
                         'description' => $order->title,
@@ -1585,7 +1585,7 @@ class HBM_API {
         // Past reserved payments for this bank account (only after balance_date)
         $past_reserved = $wpdb->get_results($wpdb->prepare(
             "SELECT * FROM {$wpdb->prefix}hbm_reserved_payments
-             WHERE user_id = %d AND bank_account_id = %d AND is_paid = 1 AND payment_date <= %s AND payment_date > %s",
+             WHERE user_id = %d AND bank_account_id = %d AND is_paid = 1 AND payment_date <= %s AND payment_date >= %s",
             $user_id, $bank_account_id, $today, $balance_date
         ));
 
