@@ -112,6 +112,16 @@ if (!defined('ABSPATH')) {
                 <div id="hbm-dashboard-bank-balances" class="hbm-table-container"></div>
             </div>
 
+            <div class="hbm-panel" style="margin-top:20px;">
+                <h3>פירוט הוצאות</h3>
+                <div id="hbm-expense-details" class="hbm-table-container"></div>
+            </div>
+
+            <div class="hbm-panel" style="margin-top:20px;">
+                <h3>10 עסקאות אשראי אחרונות</h3>
+                <div id="hbm-recent-cc-transactions" class="hbm-table-container"></div>
+            </div>
+
             <div class="hbm-dashboard-grid">
                 <div class="hbm-panel">
                     <h3>הוצאות לפי סוג</h3>
@@ -291,6 +301,16 @@ if (!defined('ABSPATH')) {
             <div class="hbm-panel" style="margin-top:20px;">
                 <h3>גביות ששולמו</h3>
                 <div id="hbm-biz-dash-collections" class="hbm-table-container"></div>
+            </div>
+
+            <div class="hbm-panel" style="margin-top:20px;">
+                <h3>פירוט הוצאות</h3>
+                <div id="hbm-biz-expense-details" class="hbm-table-container"></div>
+            </div>
+
+            <div class="hbm-panel" style="margin-top:20px;">
+                <h3>10 עסקאות אשראי אחרונות</h3>
+                <div id="hbm-biz-recent-cc-transactions" class="hbm-table-container"></div>
             </div>
 
             <div class="hbm-panel" style="margin-top:20px;">

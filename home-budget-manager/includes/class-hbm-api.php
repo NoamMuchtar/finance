@@ -801,6 +801,78 @@ class HBM_API {
 
         $remaining = $total_income - $total_expenses - $total_allocated;
 
+        // Build expense details: group CC expenses by card, show others individually
+        $cc_groups = [];
+        $non_cc_details = [];
+        $user_cards = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}hbm_credit_cards WHERE user_id = %d AND (is_business = 0 OR is_business IS NULL)",
+            $user_id
+        ));
+        $card_map = [];
+        foreach ($user_cards as $c) {
+            $card_map[$c->id] = $c;
+        }
+
+        foreach ($expenses as $expense) {
+            $monthly_amount = self::get_monthly_amount($expense, $month_start);
+            if ($monthly_amount <= 0) continue;
+
+            if (!empty($expense->credit_card_id) && isset($card_map[$expense->credit_card_id])) {
+                $cid = $expense->credit_card_id;
+                if (!isset($cc_groups[$cid])) {
+                    $card = $card_map[$cid];
+                    $cc_groups[$cid] = [
+                        'type' => 'credit_card',
+                        'title' => $card->card_name . ' ***' . $card->last_four,
+                        'billing_day' => intval($card->billing_day),
+                        'amount' => 0,
+                    ];
+                }
+                $cc_groups[$cid]['amount'] += $monthly_amount;
+            } else {
+                $non_cc_details[] = [
+                    'type' => $expense->type,
+                    'title' => $expense->title,
+                    'amount' => $monthly_amount,
+                    'category' => $expense->category,
+                ];
+            }
+        }
+
+        foreach ($standing_orders as $order) {
+            $non_cc_details[] = [
+                'type' => 'standing_order',
+                'title' => $order->title,
+                'amount' => floatval($order->amount),
+                'category' => $order->category ?? '',
+            ];
+        }
+
+        $expense_details = array_merge(array_values($cc_groups), $non_cc_details);
+
+        // Recent 10 credit card transactions (personal)
+        $recent_cc = $wpdb->get_results($wpdb->prepare(
+            "SELECT e.*, c.card_name, c.last_four FROM {$wpdb->prefix}hbm_expenses e
+             LEFT JOIN {$wpdb->prefix}hbm_credit_cards c ON e.credit_card_id = c.id
+             WHERE e.user_id = %d AND e.credit_card_id IS NOT NULL
+             AND (e.is_business = 0 OR e.is_business IS NULL)
+             ORDER BY e.created_at DESC LIMIT 10",
+            $user_id
+        ));
+
+        $recent_cc_items = [];
+        foreach ($recent_cc as $r) {
+            $recent_cc_items[] = [
+                'title' => $r->title,
+                'amount' => floatval($r->type === 'installment' && $r->installment_amount ? $r->installment_amount : $r->amount),
+                'card_name' => ($r->card_name ? $r->card_name . ' ***' . $r->last_four : ''),
+                'category' => $r->category,
+                'type' => $r->type,
+                'start_date' => $r->start_date,
+                'total_installments' => $r->total_installments ? intval($r->total_installments) : null,
+            ];
+        }
+
         return rest_ensure_response([
             'month' => $month,
             'start_date' => $month_start,
@@ -815,6 +887,8 @@ class HBM_API {
             'budget_status' => $budget_status,
             'standing_orders_total' => $standing_orders_total,
             'reserved_payments' => $reserved_payments,
+            'expense_details' => $expense_details,
+            'recent_cc_transactions' => $recent_cc_items,
         ]);
     }
 
@@ -1885,10 +1959,66 @@ class HBM_API {
         ));
 
         $total_expenses = 0;
+        $biz_cc_groups = [];
+        $biz_non_cc_details = [];
+
+        $biz_cards = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}hbm_credit_cards WHERE user_id = %d AND is_business = 1",
+            $user_id
+        ));
+        $biz_card_map = [];
+        foreach ($biz_cards as $c) {
+            $biz_card_map[$c->id] = $c;
+        }
+
         foreach ($expenses as $expense) {
             $monthly_amount = self::get_monthly_amount($expense, $month_start);
             if ($monthly_amount <= 0) continue;
             $total_expenses += $monthly_amount;
+
+            if (!empty($expense->credit_card_id) && isset($biz_card_map[$expense->credit_card_id])) {
+                $cid = $expense->credit_card_id;
+                if (!isset($biz_cc_groups[$cid])) {
+                    $card = $biz_card_map[$cid];
+                    $biz_cc_groups[$cid] = [
+                        'type' => 'credit_card',
+                        'title' => $card->card_name . ' ***' . $card->last_four,
+                        'billing_day' => intval($card->billing_day),
+                        'amount' => 0,
+                    ];
+                }
+                $biz_cc_groups[$cid]['amount'] += $monthly_amount;
+            } else {
+                $biz_non_cc_details[] = [
+                    'type' => $expense->type,
+                    'title' => $expense->title,
+                    'amount' => $monthly_amount,
+                    'category' => $expense->category,
+                ];
+            }
+        }
+
+        $biz_expense_details = array_merge(array_values($biz_cc_groups), $biz_non_cc_details);
+
+        $biz_recent_cc = $wpdb->get_results($wpdb->prepare(
+            "SELECT e.*, c.card_name, c.last_four FROM {$wpdb->prefix}hbm_expenses e
+             LEFT JOIN {$wpdb->prefix}hbm_credit_cards c ON e.credit_card_id = c.id
+             WHERE e.user_id = %d AND e.credit_card_id IS NOT NULL AND e.is_business = 1
+             ORDER BY e.created_at DESC LIMIT 10",
+            $user_id
+        ));
+
+        $biz_recent_cc_items = [];
+        foreach ($biz_recent_cc as $r) {
+            $biz_recent_cc_items[] = [
+                'title' => $r->title,
+                'amount' => floatval($r->type === 'installment' && $r->installment_amount ? $r->installment_amount : $r->amount),
+                'card_name' => ($r->card_name ? $r->card_name . ' ***' . $r->last_four : ''),
+                'category' => $r->category,
+                'type' => $r->type,
+                'start_date' => $r->start_date,
+                'total_installments' => $r->total_installments ? intval($r->total_installments) : null,
+            ];
         }
 
         $available_salary = $total_income - $total_expenses;
@@ -1899,6 +2029,8 @@ class HBM_API {
             'available_salary' => $available_salary,
             'month' => $month,
             'collection_items' => $collection_items,
+            'expense_details' => $biz_expense_details,
+            'recent_cc_transactions' => $biz_recent_cc_items,
         ]);
     }
 

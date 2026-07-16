@@ -636,6 +636,8 @@
             renderExpensesByType(data.expenses_by_type);
             renderExpensesByCategory(data.expenses_by_category);
             renderBudgetStatus(data.budget_status);
+            renderExpenseDetails(data.expense_details, 'hbm-expense-details');
+            renderRecentCcTransactions(data.recent_cc_transactions, 'hbm-recent-cc-transactions');
         });
         loadDashboardBankBalances();
     }
@@ -659,6 +661,8 @@
             renderExpensesByType(data.expenses_by_type);
             renderExpensesByCategory(data.expenses_by_category);
             renderBudgetStatus(data.budget_status);
+            renderExpenseDetails(data.expense_details, 'hbm-expense-details');
+            renderRecentCcTransactions(data.recent_cc_transactions, 'hbm-recent-cc-transactions');
         });
 
         loadOverdraftWarning();
@@ -692,6 +696,62 @@
             html += '</tbody></table>';
             container.innerHTML = html;
         });
+    }
+
+    function renderExpenseDetails(details, containerId) {
+        var container = document.getElementById(containerId);
+        if (!container) return;
+        if (!details || details.length === 0) {
+            container.innerHTML = '<div class="hbm-empty-state"><p>אין הוצאות בתקופה זו</p></div>';
+            return;
+        }
+        var html = '<table class="hbm-table"><thead><tr>' +
+            '<th>תיאור</th><th>סוג</th><th>קטגוריה</th><th>סכום</th>' +
+            '</tr></thead><tbody>';
+        details.forEach(function (item) {
+            var typeLabel;
+            if (item.type === 'credit_card') {
+                typeLabel = 'כרטיס אשראי (יום ' + item.billing_day + ')';
+            } else if (item.type === 'standing_order') {
+                typeLabel = 'הוראת קבע';
+            } else {
+                typeLabel = TYPE_LABELS[item.type] || item.type || '-';
+            }
+            var catLabel = CATEGORIES[item.category] || item.category || '-';
+            html += '<tr>' +
+                '<td>' + escapeHtml(item.title) + '</td>' +
+                '<td>' + typeLabel + '</td>' +
+                '<td>' + catLabel + '</td>' +
+                '<td><strong>' + formatCurrency(item.amount) + '</strong></td>' +
+                '</tr>';
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+
+    function renderRecentCcTransactions(transactions, containerId) {
+        var container = document.getElementById(containerId);
+        if (!container) return;
+        if (!transactions || transactions.length === 0) {
+            container.innerHTML = '<div class="hbm-empty-state"><p>אין עסקאות אשראי</p></div>';
+            return;
+        }
+        var html = '<table class="hbm-table"><thead><tr>' +
+            '<th>תיאור</th><th>כרטיס</th><th>קטגוריה</th><th>סכום</th><th>תאריך</th>' +
+            '</tr></thead><tbody>';
+        transactions.forEach(function (item) {
+            var catLabel = CATEGORIES[item.category] || item.category || '-';
+            var installLabel = item.total_installments ? ' (' + item.total_installments + ' תשלומים)' : '';
+            html += '<tr>' +
+                '<td>' + escapeHtml(item.title) + installLabel + '</td>' +
+                '<td>' + escapeHtml(item.card_name) + '</td>' +
+                '<td>' + catLabel + '</td>' +
+                '<td><strong>' + formatCurrency(item.amount) + '</strong></td>' +
+                '<td>' + formatDate(item.start_date) + '</td>' +
+                '</tr>';
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
     }
 
     // ===================== Cash Flow Nav & Page =====================
@@ -2102,6 +2162,9 @@
                     collContainer.innerHTML = html;
                 }
             }
+
+            renderExpenseDetails(data.expense_details, 'hbm-biz-expense-details');
+            renderRecentCcTransactions(data.recent_cc_transactions, 'hbm-biz-recent-cc-transactions');
         });
     }
 
