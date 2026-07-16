@@ -367,8 +367,10 @@
             }
             html += '<div class="hbm-settings-item">' +
                 '<span>' + (card.card_name ? escapeHtml(card.card_name) + ' - ' : '') + '**** ' + escapeHtml(card.last_four) + ' | יום חיוב: ' + card.billing_day + bankLabel + '</span>' +
+                '<div class="hbm-settings-item-actions">' +
+                '<button class="hbm-btn hbm-btn-sm" onclick="hbmApp.editCreditCard(' + card.id + ')">ערוך</button>' +
                 '<button class="hbm-btn hbm-btn-danger hbm-btn-sm" onclick="hbmApp.deleteCreditCard(' + card.id + ')">מחק</button>' +
-                '</div>';
+                '</div></div>';
         });
         container.innerHTML = html;
         var bankSelect = document.getElementById('hbm-new-cc-bank-account');
@@ -409,6 +411,45 @@
         if (!confirm('האם למחוק כרטיס אשראי זה?')) return;
         apiRequest('credit-cards/' + id, 'DELETE').then(function () {
             loadCreditCards();
+        });
+    }
+
+    function editCreditCard(id) {
+        var card = creditCards.find(function (c) { return c.id == id; });
+        if (!card) return;
+
+        var html = '<form id="hbm-edit-cc-form">' +
+            '<div class="hbm-form-group"><label>שם כרטיס</label>' +
+            '<input type="text" name="card_name" value="' + escapeHtml(card.card_name || '') + '" required></div>' +
+            '<div class="hbm-form-row">' +
+            '<div class="hbm-form-group"><label>4 ספרות אחרונות</label>' +
+            '<input type="text" name="last_four" value="' + escapeHtml(card.last_four) + '" maxlength="4" required></div>' +
+            '<div class="hbm-form-group"><label>יום חיוב</label>' +
+            '<input type="number" name="billing_day" min="1" max="31" value="' + (card.billing_day || 1) + '" required></div>' +
+            '</div>' +
+            '<div class="hbm-form-group"><label>חשבון בנק לחיוב</label>' +
+            '<select name="bank_account_id">' + buildBankAccountOptions(card.bank_account_id) + '</select></div>' +
+            '<div class="hbm-form-actions">' +
+            '<button type="submit" class="hbm-btn hbm-btn-primary">עדכן</button>' +
+            '<button type="button" class="hbm-btn hbm-btn-ghost" onclick="hbmApp.closeModal()">ביטול</button>' +
+            '</div></form>';
+
+        openModal('עריכת כרטיס אשראי', html);
+
+        document.getElementById('hbm-edit-cc-form').addEventListener('submit', function (e) {
+            e.preventDefault();
+            var form = e.target;
+            apiRequest('credit-cards/' + id, 'PUT', {
+                card_name: form.card_name.value,
+                last_four: form.last_four.value,
+                billing_day: parseInt(form.billing_day.value),
+                bank_account_id: form.bank_account_id.value ? parseInt(form.bank_account_id.value) : null
+            }).then(function (data) {
+                if (data && data.id) {
+                    closeModal();
+                    loadCreditCards();
+                }
+            });
         });
     }
 
@@ -2450,8 +2491,10 @@
             }
             html += '<div class="hbm-settings-item">' +
                 '<span>' + (card.card_name ? escapeHtml(card.card_name) + ' - ' : '') + '**** ' + escapeHtml(card.last_four) + ' | יום חיוב: ' + card.billing_day + bankLabel + '</span>' +
+                '<div class="hbm-settings-item-actions">' +
+                '<button class="hbm-btn hbm-btn-sm" onclick="hbmApp.editBusinessCreditCard(' + card.id + ')">ערוך</button>' +
                 '<button class="hbm-btn hbm-btn-danger hbm-btn-sm" onclick="hbmApp.deleteBusinessCreditCard(' + card.id + ')">מחק</button>' +
-                '</div>';
+                '</div></div>';
         });
         container.innerHTML = html;
         var bankSelect = document.getElementById('hbm-new-biz-cc-bank-account');
@@ -2493,6 +2536,45 @@
         if (!confirm('האם למחוק כרטיס אשראי עסקי זה?')) return;
         apiRequest('credit-cards/' + id, 'DELETE').then(function () {
             loadBusinessCreditCards();
+        });
+    }
+
+    function editBusinessCreditCard(id) {
+        var card = bizCreditCards.find(function (c) { return c.id == id; });
+        if (!card) return;
+
+        var html = '<form id="hbm-edit-cc-form">' +
+            '<div class="hbm-form-group"><label>שם כרטיס</label>' +
+            '<input type="text" name="card_name" value="' + escapeHtml(card.card_name || '') + '" required></div>' +
+            '<div class="hbm-form-row">' +
+            '<div class="hbm-form-group"><label>4 ספרות אחרונות</label>' +
+            '<input type="text" name="last_four" value="' + escapeHtml(card.last_four) + '" maxlength="4" required></div>' +
+            '<div class="hbm-form-group"><label>יום חיוב</label>' +
+            '<input type="number" name="billing_day" min="1" max="31" value="' + (card.billing_day || 1) + '" required></div>' +
+            '</div>' +
+            '<div class="hbm-form-group"><label>חשבון בנק לחיוב</label>' +
+            '<select name="bank_account_id">' + buildBizBankAccountOptions(card.bank_account_id) + '</select></div>' +
+            '<div class="hbm-form-actions">' +
+            '<button type="submit" class="hbm-btn hbm-btn-primary">עדכן</button>' +
+            '<button type="button" class="hbm-btn hbm-btn-ghost" onclick="hbmApp.closeModal()">ביטול</button>' +
+            '</div></form>';
+
+        openModal('עריכת כרטיס אשראי עסקי', html);
+
+        document.getElementById('hbm-edit-cc-form').addEventListener('submit', function (e) {
+            e.preventDefault();
+            var form = e.target;
+            apiRequest('credit-cards/' + id, 'PUT', {
+                card_name: form.card_name.value,
+                last_four: form.last_four.value,
+                billing_day: parseInt(form.billing_day.value),
+                bank_account_id: form.bank_account_id.value ? parseInt(form.bank_account_id.value) : null
+            }).then(function (data) {
+                if (data && data.id) {
+                    closeModal();
+                    loadBusinessCreditCards();
+                }
+            });
         });
     }
 
@@ -2682,6 +2764,7 @@
         saveUserType: saveUserType,
         // Credit cards
         addCreditCard: addCreditCard,
+        editCreditCard: editCreditCard,
         deleteCreditCard: deleteCreditCard,
         // Bank accounts
         addBankAccount: addBankAccount,
@@ -2790,6 +2873,7 @@
             });
         },
         addBusinessCreditCard: addBusinessCreditCard,
+        editBusinessCreditCard: editBusinessCreditCard,
         deleteBusinessCreditCard: deleteBusinessCreditCard,
         addBusinessBankAccount: addBusinessBankAccount,
         editBusinessBankAccount: editBusinessBankAccount,

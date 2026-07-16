@@ -63,6 +63,7 @@ class HBM_API {
         ]);
 
         register_rest_route($namespace, '/credit-cards/(?P<id>\d+)', [
+            ['methods' => 'PUT', 'callback' => [__CLASS__, 'update_credit_card'], 'permission_callback' => [__CLASS__, 'check_auth']],
             ['methods' => WP_REST_Server::DELETABLE, 'callback' => [__CLASS__, 'delete_credit_card'], 'permission_callback' => [__CLASS__, 'check_auth']],
         ]);
 
@@ -882,6 +883,46 @@ class HBM_API {
 
         $data['id'] = $wpdb->insert_id;
         return rest_ensure_response($data);
+    }
+
+    public static function update_credit_card($request) {
+        global $wpdb;
+        $user_id = get_current_user_id();
+        $id = intval($request->get_param('id'));
+
+        $params = $request->get_json_params();
+        if (empty($params)) {
+            $params = $request->get_params();
+        }
+
+        $data = [];
+        if (isset($params['card_name'])) $data['card_name'] = sanitize_text_field($params['card_name']);
+        if (isset($params['last_four'])) $data['last_four'] = sanitize_text_field($params['last_four']);
+        if (isset($params['billing_day'])) $data['billing_day'] = intval($params['billing_day']);
+        if (array_key_exists('bank_account_id', $params)) {
+            $data['bank_account_id'] = $params['bank_account_id'] ? intval($params['bank_account_id']) : null;
+        }
+
+        if (empty($data)) {
+            return new WP_Error('missing_data', 'לא נשלחו נתונים לעדכון', ['status' => 400]);
+        }
+
+        $result = $wpdb->update(
+            "{$wpdb->prefix}hbm_credit_cards",
+            $data,
+            ['id' => $id, 'user_id' => $user_id]
+        );
+
+        if ($result === false) {
+            return new WP_Error('db_error', 'שגיאה בעדכון הנתונים: ' . $wpdb->last_error, ['status' => 500]);
+        }
+
+        $updated = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}hbm_credit_cards WHERE id = %d AND user_id = %d",
+            $id, $user_id
+        ));
+
+        return rest_ensure_response($updated);
     }
 
     public static function delete_credit_card($request) {
