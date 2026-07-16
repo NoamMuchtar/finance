@@ -764,6 +764,16 @@ class HBM_API {
             $user_id, $month_end, $month_start
         ));
 
+        // Load credit cards map early (needed for one-time CC deduction dates)
+        $user_cards = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}hbm_credit_cards WHERE user_id = %d AND (is_business = 0 OR is_business IS NULL)",
+            $user_id
+        ));
+        $card_map = [];
+        foreach ($user_cards as $c) {
+            $card_map[$c->id] = $c;
+        }
+
         $total_expenses = 0;
         $expenses_by_category = [];
         $expenses_by_type = ['fixed' => 0, 'installment' => 0, 'loan' => 0, 'saving' => 0, 'one_time' => 0];
@@ -771,6 +781,16 @@ class HBM_API {
         foreach ($expenses as $expense) {
             $monthly_amount = self::get_monthly_amount($expense, $month_start);
             if ($monthly_amount <= 0) continue;
+
+            if ($expense->type === 'one_time') {
+                if (!empty($expense->credit_card_id) && isset($card_map[$expense->credit_card_id])) {
+                    $billing_day = intval($card_map[$expense->credit_card_id]->billing_day);
+                    $deduction = self::get_one_time_cc_deduction_date($expense->start_date, $billing_day);
+                    if ($deduction < $month_start || $deduction > $month_end) continue;
+                } else {
+                    if ($expense->start_date < $month_start || $expense->start_date > $month_end) continue;
+                }
+            }
 
             $total_expenses += $monthly_amount;
             $expenses_by_type[$expense->type] = ($expenses_by_type[$expense->type] ?? 0) + $monthly_amount;
@@ -828,14 +848,6 @@ class HBM_API {
         // Build expense details: group CC expenses by card, show others individually
         $cc_groups = [];
         $non_cc_details = [];
-        $user_cards = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}hbm_credit_cards WHERE user_id = %d AND (is_business = 0 OR is_business IS NULL)",
-            $user_id
-        ));
-        $card_map = [];
-        foreach ($user_cards as $c) {
-            $card_map[$c->id] = $c;
-        }
 
         foreach ($expenses as $expense) {
             $monthly_amount = self::get_monthly_amount($expense, $month_start);
@@ -845,7 +857,12 @@ class HBM_API {
                 $cid = $expense->credit_card_id;
                 $card = $card_map[$cid];
                 $billing_day = intval($card->billing_day);
-                $deduction_date = $month . '-' . sprintf('%02d', $billing_day);
+
+                if ($expense->type === 'one_time') {
+                    $deduction_date = self::get_one_time_cc_deduction_date($expense->start_date, $billing_day);
+                } else {
+                    $deduction_date = $month . '-' . sprintf('%02d', $billing_day);
+                }
                 if ($deduction_date < $month_start || $deduction_date > $month_end) continue;
                 if (!isset($cc_groups[$cid])) {
                     $cc_groups[$cid] = [
@@ -2179,13 +2196,29 @@ class HBM_API {
         foreach ($expenses as $expense) {
             $monthly_amount = self::get_monthly_amount($expense, $month_start);
             if ($monthly_amount <= 0) continue;
+
+            if ($expense->type === 'one_time') {
+                if (!empty($expense->credit_card_id) && isset($biz_card_map[$expense->credit_card_id])) {
+                    $billing_day = intval($biz_card_map[$expense->credit_card_id]->billing_day);
+                    $deduction = self::get_one_time_cc_deduction_date($expense->start_date, $billing_day);
+                    if ($deduction < $month_start || $deduction > $month_end) continue;
+                } else {
+                    if ($expense->start_date < $month_start || $expense->start_date > $month_end) continue;
+                }
+            }
+
             $total_expenses += $monthly_amount;
 
             if (!empty($expense->credit_card_id) && isset($biz_card_map[$expense->credit_card_id])) {
                 $cid = $expense->credit_card_id;
                 $card = $biz_card_map[$cid];
                 $billing_day = intval($card->billing_day);
-                $deduction_date = $month . '-' . sprintf('%02d', $billing_day);
+
+                if ($expense->type === 'one_time') {
+                    $deduction_date = self::get_one_time_cc_deduction_date($expense->start_date, $billing_day);
+                } else {
+                    $deduction_date = $month . '-' . sprintf('%02d', $billing_day);
+                }
                 if ($deduction_date < $month_start || $deduction_date > $month_end) continue;
                 if (!isset($biz_cc_groups[$cid])) {
                     $biz_cc_groups[$cid] = [
@@ -2294,6 +2327,12 @@ class HBM_API {
 
         $charges = [];
         foreach ($expenses as $exp) {
+            if ($exp->type === 'one_time') {
+                $deduction = self::get_one_time_cc_deduction_date($exp->start_date, $billing_day);
+                $deduction_month = substr($deduction, 0, 7);
+                if ($deduction_month !== $month) continue;
+            }
+
             if ($exp->type === 'installment') {
                 $months_passed = self::months_between($exp->start_date, $month_start);
                 $current_installment = $months_passed + 1;
@@ -2489,6 +2528,20 @@ class HBM_API {
         $s = explode('-', substr($start, 0, 7));
         $e = explode('-', substr($end, 0, 7));
         return (intval($e[0]) - intval($s[0])) * 12 + (intval($e[1]) - intval($s[1]));
+    }
+
+    private static function get_one_time_cc_deduction_date($expense_start_date, $billing_day) {
+        $exp_day = intval(date('d', strtotime($expense_start_date)));
+        $exp_year = intval(date('Y', strtotime($expense_start_date)));
+        $exp_month = intval(date('m', strtotime($expense_start_date)));
+
+        if ($exp_day <= $billing_day) {
+            return sprintf('%04d-%02d-%02d', $exp_year, $exp_month, $billing_day);
+        } else {
+            $next = new DateTime($expense_start_date);
+            $next->modify('first day of next month');
+            return sprintf('%04d-%02d-%02d', intval($next->format('Y')), intval($next->format('m')), $billing_day);
+        }
     }
 
     // =========================================================================
