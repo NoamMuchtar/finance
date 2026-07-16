@@ -511,22 +511,7 @@
 
         loadDashboardReservedPayments();
 
-        // Setup cashflow bank account change handler
-        var cfSelect = document.getElementById('hbm-cashflow-bank-account');
-        if (cfSelect) {
-            // Remove old listener by replacing
-            var newSelect = cfSelect.cloneNode(true);
-            cfSelect.parentNode.replaceChild(newSelect, cfSelect);
-            newSelect.innerHTML = buildBankAccountOptions();
-            newSelect.addEventListener('change', function () {
-                if (this.value) {
-                    loadCashFlow(this.value);
-                } else {
-                    var table = document.getElementById('hbm-cashflow-table');
-                    if (table) table.innerHTML = '<div class="hbm-empty-state"><p>בחר חשבון בנק לצפייה בתזרים מזומנים</p></div>';
-                }
-            });
-        }
+        setupCashFlowControls();
     }
 
     function loadDashboardReservedPayments() {
@@ -557,12 +542,25 @@
         });
     }
 
+    function getCashFlowDateParams() {
+        var params = {};
+        var startEl = document.getElementById('hbm-cashflow-start-date');
+        var endEl = document.getElementById('hbm-cashflow-end-date');
+        if (startEl && startEl.value) params.start_date = startEl.value;
+        if (endEl && endEl.value) params.end_date = endEl.value;
+        if (!params.start_date && !params.end_date) params.months_ahead = 1;
+        return params;
+    }
+
     function loadCashFlow(bankAccountId) {
         var container = document.getElementById('hbm-cashflow-table');
         if (!container) return;
         container.innerHTML = '<div class="hbm-empty-state"><p>טוען תזרים...</p></div>';
 
-        apiRequest('cash-flow', 'GET', { bank_account_id: bankAccountId, months_ahead: 3 }).then(function (data) {
+        var params = getCashFlowDateParams();
+        params.bank_account_id = bankAccountId;
+
+        apiRequest('cash-flow', 'GET', params).then(function (data) {
             if (!data || data.error || !Array.isArray(data.entries)) {
                 container.innerHTML = '<div class="hbm-empty-state"><p>אין נתוני תזרים</p></div>';
                 return;
@@ -586,6 +584,65 @@
             html += '</tbody></table>';
             container.innerHTML = html;
         });
+    }
+
+    function setupCashFlowControls() {
+        var cfSelect = document.getElementById('hbm-cashflow-bank-account');
+        if (!cfSelect) return;
+
+        var newSelect = cfSelect.cloneNode(true);
+        cfSelect.parentNode.replaceChild(newSelect, cfSelect);
+        newSelect.innerHTML = buildBankAccountOptions();
+
+        var defaultBankId = localStorage.getItem('hbm_default_bank_account') || '';
+        if (defaultBankId) {
+            newSelect.value = defaultBankId;
+        }
+
+        // Set default date range: today to 1 month ahead
+        var startDateEl = document.getElementById('hbm-cashflow-start-date');
+        var endDateEl = document.getElementById('hbm-cashflow-end-date');
+        if (startDateEl && !startDateEl.value) {
+            var now = new Date();
+            startDateEl.value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+        }
+        if (endDateEl && !endDateEl.value) {
+            var oneMonthAhead = new Date();
+            oneMonthAhead.setMonth(oneMonthAhead.getMonth() + 1);
+            endDateEl.value = oneMonthAhead.getFullYear() + '-' + String(oneMonthAhead.getMonth() + 1).padStart(2, '0') + '-' + String(oneMonthAhead.getDate()).padStart(2, '0');
+        }
+
+        function onCashFlowChange() {
+            if (newSelect.value) {
+                loadCashFlow(newSelect.value);
+            } else {
+                var table = document.getElementById('hbm-cashflow-table');
+                if (table) table.innerHTML = '<div class="hbm-empty-state"><p>בחר חשבון בנק לצפייה בתזרים מזומנים</p></div>';
+            }
+        }
+
+        newSelect.addEventListener('change', onCashFlowChange);
+        if (startDateEl) startDateEl.addEventListener('change', onCashFlowChange);
+        if (endDateEl) endDateEl.addEventListener('change', onCashFlowChange);
+
+        // Set default button
+        var setDefaultBtn = document.getElementById('hbm-cashflow-set-default');
+        if (setDefaultBtn) {
+            setDefaultBtn.addEventListener('click', function () {
+                if (newSelect.value) {
+                    localStorage.setItem('hbm_default_bank_account', newSelect.value);
+                    alert('חשבון בנק ברירת מחדל נשמר!');
+                } else {
+                    localStorage.removeItem('hbm_default_bank_account');
+                    alert('ברירת מחדל הוסרה');
+                }
+            });
+        }
+
+        // Auto-load if default bank account is set
+        if (defaultBankId && newSelect.value) {
+            loadCashFlow(defaultBankId);
+        }
     }
 
     function renderExpensesByType(data) {
@@ -728,12 +785,14 @@
             var method = isEdit ? 'PUT' : 'POST';
             var endpoint = isEdit ? 'income/' + editData.id : 'income';
             apiRequest(endpoint, method, payload).then(function (response) {
-                if (response && response.id) {
+                if (response && (response.id || response.success)) {
                     closeModal();
                     loadIncome();
                     loadDashboard();
+                } else {
+                    alert('שגיאה בשמירת הכנסה: ' + (response && response.message ? response.message : 'שגיאה לא ידועה'));
                 }
-            }).catch(function () {});
+            });
         });
     }
 
@@ -992,12 +1051,14 @@
             var method = isEdit ? 'PUT' : 'POST';
             var endpoint = isEdit ? 'expenses/' + editData.id : 'expenses';
             apiRequest(endpoint, method, payload).then(function (response) {
-                if (response && response.id) {
+                if (response && (response.id || response.success)) {
                     closeModal();
                     loadExpenses();
                     loadDashboard();
+                } else {
+                    alert('שגיאה בשמירת הוצאה: ' + (response && response.message ? response.message : 'שגיאה לא ידועה'));
                 }
-            }).catch(function () {});
+            });
         });
     }
 

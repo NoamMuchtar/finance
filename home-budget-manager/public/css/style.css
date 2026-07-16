@@ -2171,6 +2171,33 @@
 /* ============================================
    Cash Flow Charge Row Highlight
    ============================================ */
+.hbm-cashflow-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.hbm-cashflow-dates {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+}
+
+.hbm-cashflow-dates label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.hbm-input-sm {
+    padding: 4px 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 13px;
+}
+
 .hbm-cashflow-charge-row {
     background: rgba(59, 130, 246, 0.04) !important;
     border-right: 3px solid var(--hbm-primary);

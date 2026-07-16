@@ -185,12 +185,16 @@ class HBM_API {
             'amount' => floatval($params['amount'] ?? 0),
             'source' => sanitize_text_field($params['source'] ?? ''),
             'is_recurring' => intval($params['is_recurring'] ?? 1),
-            'is_business' => intval($params['is_business'] ?? 0),
             'start_date' => sanitize_text_field($params['start_date'] ?? date('Y-m-d')),
         ];
 
         if (!empty($params['end_date'])) {
             $data['end_date'] = sanitize_text_field($params['end_date']);
+        }
+
+        $is_business = intval($params['is_business'] ?? 0);
+        if ($is_business) {
+            $data['is_business'] = $is_business;
         }
 
         $result = $wpdb->insert("{$wpdb->prefix}hbm_income", $data);
@@ -199,9 +203,12 @@ class HBM_API {
             return new WP_Error('db_error', 'שגיאה בשמירת הנתונים: ' . $wpdb->last_error, ['status' => 500]);
         }
 
-        $data['id'] = $wpdb->insert_id;
+        $inserted = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}hbm_income WHERE id = %d",
+            $wpdb->insert_id
+        ));
 
-        return rest_ensure_response($data);
+        return rest_ensure_response($inserted);
     }
 
     public static function update_income($request) {
@@ -228,7 +235,12 @@ class HBM_API {
 
         $wpdb->update("{$wpdb->prefix}hbm_income", $data, ['id' => $id, 'user_id' => $user_id]);
 
-        return rest_ensure_response(['success' => true]);
+        $updated = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}hbm_income WHERE id = %d AND user_id = %d",
+            $id, $user_id
+        ));
+
+        return rest_ensure_response($updated);
     }
 
     public static function delete_income($request) {
@@ -330,8 +342,10 @@ class HBM_API {
             'start_date' => $start_date,
         ];
 
-        // Handle is_business
-        $data['is_business'] = intval($params['is_business'] ?? 0);
+        $is_business = intval($params['is_business'] ?? 0);
+        if ($is_business) {
+            $data['is_business'] = $is_business;
+        }
 
         // Handle allocation_id
         $allocation_id = null;
@@ -490,7 +504,12 @@ class HBM_API {
 
         $wpdb->update("{$wpdb->prefix}hbm_expenses", $data, ['id' => $id, 'user_id' => $user_id]);
 
-        return rest_ensure_response(['success' => true]);
+        $updated = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}hbm_expenses WHERE id = %d AND user_id = %d",
+            $id, $user_id
+        ));
+
+        return rest_ensure_response($updated);
     }
 
     public static function delete_expense($request) {
@@ -789,8 +808,12 @@ class HBM_API {
             'last_four' => sanitize_text_field($params['last_four'] ?? ''),
             'card_name' => sanitize_text_field($params['card_name'] ?? ''),
             'billing_day' => intval($params['billing_day'] ?? 1),
-            'is_business' => intval($params['is_business'] ?? 0),
         ];
+
+        $is_business = intval($params['is_business'] ?? 0);
+        if ($is_business) {
+            $data['is_business'] = $is_business;
+        }
 
         if (empty($data['last_four']) || empty($data['card_name'])) {
             return new WP_Error('missing_data', 'חסרים נתונים חובה', ['status' => 400]);
@@ -855,8 +878,12 @@ class HBM_API {
             'bank_name' => sanitize_text_field($params['bank_name'] ?? ''),
             'credit_limit' => floatval($params['credit_limit'] ?? 0),
             'initial_balance' => floatval($params['initial_balance'] ?? 0),
-            'is_business' => intval($params['is_business'] ?? 0),
         ];
+
+        $is_business = intval($params['is_business'] ?? 0);
+        if ($is_business) {
+            $data['is_business'] = $is_business;
+        }
 
         if (empty($data['last_three']) || empty($data['bank_name'])) {
             return new WP_Error('missing_data', 'חסרים נתונים חובה', ['status' => 400]);
@@ -1354,8 +1381,10 @@ class HBM_API {
         }
 
         $initial_balance = floatval($bank_account->initial_balance);
-        $today = date('Y-m-d');
-        $end_date = date('Y-m-d', strtotime("+{$months_ahead} months"));
+        $custom_start = sanitize_text_field($request->get_param('start_date') ?? '');
+        $custom_end = sanitize_text_field($request->get_param('end_date') ?? '');
+        $today = $custom_start ?: date('Y-m-d');
+        $end_date = $custom_end ?: date('Y-m-d', strtotime("+{$months_ahead} months"));
 
         $entries = [];
 

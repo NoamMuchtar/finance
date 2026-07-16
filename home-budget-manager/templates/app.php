@@ -121,9 +121,16 @@ if (!defined('ABSPATH')) {
             <div class="hbm-panel">
                 <div class="hbm-panel-header">
                     <h3>תזרים מזומנים</h3>
-                    <select id="hbm-cashflow-bank-account" class="hbm-select-inline">
-                        <option value="">בחר חשבון בנק</option>
-                    </select>
+                    <div class="hbm-cashflow-controls">
+                        <select id="hbm-cashflow-bank-account" class="hbm-select-inline">
+                            <option value="">בחר חשבון בנק</option>
+                        </select>
+                        <div class="hbm-cashflow-dates">
+                            <label>מ: <input type="date" id="hbm-cashflow-start-date" class="hbm-input-sm"></label>
+                            <label>עד: <input type="date" id="hbm-cashflow-end-date" class="hbm-input-sm"></label>
+                        </div>
+                        <button class="hbm-btn hbm-btn-ghost hbm-btn-sm" id="hbm-cashflow-set-default" title="הגדר כברירת מחדל">⭐ קבע כברירת מחדל</button>
+                    </div>
                 </div>
                 <div id="hbm-cashflow-table" class="hbm-table-container"></div>
             </div>
