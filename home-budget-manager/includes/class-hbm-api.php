@@ -178,10 +178,25 @@ class HBM_API {
         register_rest_route($namespace, '/bank-balances', [
             ['methods' => 'GET', 'callback' => [__CLASS__, 'get_bank_balances'], 'permission_callback' => [__CLASS__, 'check_auth']],
         ]);
+
+        // Current User Info
+        register_rest_route($namespace, '/current-user', [
+            ['methods' => 'GET', 'callback' => [__CLASS__, 'get_current_user_info'], 'permission_callback' => [__CLASS__, 'check_auth']],
+        ]);
     }
 
     public static function check_auth() {
         return is_user_logged_in();
+    }
+
+    public static function get_current_user_info() {
+        $user_id = get_current_user_id();
+        $user = get_userdata($user_id);
+        return rest_ensure_response([
+            'id' => $user_id,
+            'display_name' => $user ? $user->display_name : '',
+            'is_business_user' => self::is_business_user($user_id),
+        ]);
     }
 
     // =========================================================================
@@ -541,8 +556,8 @@ class HBM_API {
         if (!empty($allocation_id)) {
             $expense_amount = floatval($data['amount']);
             $wpdb->query($wpdb->prepare(
-                "UPDATE {$wpdb->prefix}hbm_budget_allocations SET used_amount = used_amount + %f WHERE id = %d AND user_id = %d",
-                $expense_amount, $allocation_id, $user_id
+                "UPDATE {$wpdb->prefix}hbm_budget_allocations SET used_amount = used_amount + %f WHERE id = %d",
+                $expense_amount, $allocation_id
             ));
         }
 
@@ -551,7 +566,6 @@ class HBM_API {
 
     public static function update_expense($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
         $id = intval($request->get_param('id'));
 
         $params = $request->get_json_params();
@@ -622,7 +636,6 @@ class HBM_API {
 
     public static function delete_expense($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
         $id = intval($request->get_param('id'));
 
         // Check if the expense has an allocation_id and subtract from used_amount
@@ -702,7 +715,6 @@ class HBM_API {
 
     public static function update_allocation($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
         $id = intval($request->get_param('id'));
 
         $params = $request->get_json_params();
@@ -735,7 +747,6 @@ class HBM_API {
 
     public static function delete_allocation($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
         $id = intval($request->get_param('id'));
 
         // Set allocation_id = NULL on any expenses that referenced this allocation
@@ -755,7 +766,6 @@ class HBM_API {
 
     public static function get_dashboard($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
 
         $custom_start = sanitize_text_field($request->get_param('start_date') ?? '');
         $custom_end = sanitize_text_field($request->get_param('end_date') ?? '');
@@ -1367,7 +1377,6 @@ class HBM_API {
 
     public static function update_standing_order($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
         $id = intval($request->get_param('id'));
 
         $params = $request->get_json_params();
@@ -1393,17 +1402,16 @@ class HBM_API {
             return new WP_Error('missing_data', 'אין נתונים לעדכון', ['status' => 400]);
         }
 
-        $wpdb->update("{$wpdb->prefix}hbm_standing_orders", $data, ['id' => $id, 'user_id' => $user_id]);
+        $wpdb->update("{$wpdb->prefix}hbm_standing_orders", $data, ['id' => $id]);
 
         return rest_ensure_response(['success' => true]);
     }
 
     public static function delete_standing_order($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
         $id = intval($request->get_param('id'));
 
-        $wpdb->delete("{$wpdb->prefix}hbm_standing_orders", ['id' => $id, 'user_id' => $user_id]);
+        $wpdb->delete("{$wpdb->prefix}hbm_standing_orders", ['id' => $id]);
 
         return rest_ensure_response(['success' => true]);
     }
@@ -1414,7 +1422,6 @@ class HBM_API {
 
     public static function get_reserved_payments($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
         $month = sanitize_text_field($request->get_param('month') ?? '');
         $upcoming = intval($request->get_param('upcoming') ?? 0);
 
@@ -1422,25 +1429,28 @@ class HBM_API {
             // Get future unpaid reserved payments sorted by date ASC
             $results = $wpdb->get_results($wpdb->prepare(
                 "SELECT * FROM {$wpdb->prefix}hbm_reserved_payments
-                 WHERE user_id = %d AND is_paid = 0 AND payment_date >= %s
+                 WHERE is_paid = 0 AND payment_date >= %s
                  ORDER BY payment_date ASC",
-                $user_id, date('Y-m-d')
+                date('Y-m-d')
             ));
         } elseif ($month) {
             $month_start = $month . '-01';
             $month_end = date('Y-m-t', strtotime($month_start));
             $results = $wpdb->get_results($wpdb->prepare(
                 "SELECT * FROM {$wpdb->prefix}hbm_reserved_payments
-                 WHERE user_id = %d AND payment_date >= %s AND payment_date <= %s
+                 WHERE payment_date >= %s AND payment_date <= %s
                  ORDER BY payment_date ASC",
-                $user_id, $month_start, $month_end
+                $month_start, $month_end
             ));
         } else {
-            $results = $wpdb->get_results($wpdb->prepare(
+            $results = $wpdb->get_results(
                 "SELECT * FROM {$wpdb->prefix}hbm_reserved_payments
-                 WHERE user_id = %d ORDER BY payment_date DESC",
-                $user_id
-            ));
+                 ORDER BY payment_date DESC"
+            );
+        }
+
+        foreach ($results as &$item) {
+            $item->reported_by = self::get_user_display_name($item->user_id);
         }
 
         return rest_ensure_response($results);
@@ -1485,7 +1495,6 @@ class HBM_API {
 
     public static function update_reserved_payment($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
         $id = intval($request->get_param('id'));
 
         $params = $request->get_json_params();
@@ -1507,17 +1516,16 @@ class HBM_API {
             return new WP_Error('missing_data', 'אין נתונים לעדכון', ['status' => 400]);
         }
 
-        $wpdb->update("{$wpdb->prefix}hbm_reserved_payments", $data, ['id' => $id, 'user_id' => $user_id]);
+        $wpdb->update("{$wpdb->prefix}hbm_reserved_payments", $data, ['id' => $id]);
 
         return rest_ensure_response(['success' => true]);
     }
 
     public static function delete_reserved_payment($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
         $id = intval($request->get_param('id'));
 
-        $wpdb->delete("{$wpdb->prefix}hbm_reserved_payments", ['id' => $id, 'user_id' => $user_id]);
+        $wpdb->delete("{$wpdb->prefix}hbm_reserved_payments", ['id' => $id]);
 
         return rest_ensure_response(['success' => true]);
     }
@@ -1621,16 +1629,17 @@ class HBM_API {
 
     public static function get_savings_log($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
 
-        $results = $wpdb->get_results($wpdb->prepare(
+        $results = $wpdb->get_results(
             "SELECT sl.*, e.title as expense_title
              FROM {$wpdb->prefix}hbm_savings_log sl
              LEFT JOIN {$wpdb->prefix}hbm_expenses e ON sl.expense_id = e.id
-             WHERE sl.user_id = %d
-             ORDER BY sl.deposit_date DESC",
-            $user_id
-        ));
+             ORDER BY sl.deposit_date DESC"
+        );
+
+        foreach ($results as &$item) {
+            $item->reported_by = self::get_user_display_name($item->user_id);
+        }
 
         return rest_ensure_response($results);
     }
@@ -1672,11 +1681,16 @@ class HBM_API {
 
     public static function get_savings_accounts($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
-        return rest_ensure_response($wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}hbm_savings_accounts WHERE user_id = %d ORDER BY name ASC",
-            $user_id
-        )));
+
+        $results = $wpdb->get_results(
+            "SELECT * FROM {$wpdb->prefix}hbm_savings_accounts ORDER BY name ASC"
+        );
+
+        foreach ($results as &$item) {
+            $item->reported_by = self::get_user_display_name($item->user_id);
+        }
+
+        return rest_ensure_response($results);
     }
 
     public static function create_savings_account($request) {
@@ -1708,7 +1722,6 @@ class HBM_API {
 
     public static function update_savings_account($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
         $id = intval($request->get_param('id'));
         $params = $request->get_json_params();
         if (empty($params)) $params = $request->get_params();
@@ -1724,44 +1737,40 @@ class HBM_API {
             return new WP_Error('missing_data', 'לא נשלחו נתונים לעדכון', ['status' => 400]);
         }
 
-        $result = $wpdb->update("{$wpdb->prefix}hbm_savings_accounts", $data, ['id' => $id, 'user_id' => $user_id]);
+        $result = $wpdb->update("{$wpdb->prefix}hbm_savings_accounts", $data, ['id' => $id]);
         if ($result === false) {
             return new WP_Error('db_error', 'שגיאה בעדכון הנתונים: ' . $wpdb->last_error, ['status' => 500]);
         }
 
         $updated = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}hbm_savings_accounts WHERE id = %d AND user_id = %d",
-            $id, $user_id
+            "SELECT * FROM {$wpdb->prefix}hbm_savings_accounts WHERE id = %d",
+            $id
         ));
         return rest_ensure_response($updated);
     }
 
     public static function delete_savings_account($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
         $id = intval($request->get_param('id'));
 
-        $wpdb->delete("{$wpdb->prefix}hbm_savings_accounts", ['id' => $id, 'user_id' => $user_id]);
+        $wpdb->delete("{$wpdb->prefix}hbm_savings_accounts", ['id' => $id]);
         return rest_ensure_response(['success' => true]);
     }
 
     public static function get_savings_summary($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
 
-        $accounts = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}hbm_savings_accounts WHERE user_id = %d ORDER BY name ASC",
-            $user_id
-        ));
+        $accounts = $wpdb->get_results(
+            "SELECT * FROM {$wpdb->prefix}hbm_savings_accounts ORDER BY name ASC"
+        );
 
-        $expenses = $wpdb->get_results($wpdb->prepare(
+        $expenses = $wpdb->get_results(
             "SELECT e.*, sa.name as saving_account_name
              FROM {$wpdb->prefix}hbm_expenses e
              LEFT JOIN {$wpdb->prefix}hbm_savings_accounts sa ON e.saving_account_id = sa.id
-             WHERE e.user_id = %d AND e.type = 'saving' AND (e.is_business = 0 OR e.is_business IS NULL)
-             ORDER BY e.start_date DESC",
-            $user_id
-        ));
+             WHERE e.type = 'saving' AND (e.is_business = 0 OR e.is_business IS NULL)
+             ORDER BY e.start_date DESC"
+        );
 
         $account_totals = [];
         $unassigned_total = 0;
@@ -1848,6 +1857,10 @@ class HBM_API {
             update_user_meta($user_id, 'hbm_user_type', $user_type);
         }
 
+        if (isset($params['is_business_user'])) {
+            update_user_meta($user_id, 'hbm_is_business_user', intval($params['is_business_user']));
+        }
+
         return rest_ensure_response(['success' => true]);
     }
 
@@ -1870,8 +1883,8 @@ class HBM_API {
 
         // Get the bank account
         $bank_account = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}hbm_bank_accounts WHERE id = %d AND user_id = %d",
-            $bank_account_id, $user_id
+            "SELECT * FROM {$wpdb->prefix}hbm_bank_accounts WHERE id = %d",
+            $bank_account_id
         ));
 
         if (!$bank_account) {
@@ -1889,10 +1902,10 @@ class HBM_API {
         $range_start = $today;
         $range_end = $end_date;
 
-        // Load credit cards linked to this bank account
+        // Load credit cards linked to this bank account (all users)
         $bank_cards = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}hbm_credit_cards WHERE user_id = %d AND bank_account_id = %d",
-            $user_id, $bank_account_id
+            "SELECT * FROM {$wpdb->prefix}hbm_credit_cards WHERE bank_account_id = %d",
+            $bank_account_id
         ));
         $bank_card_ids = array_map(function($c) { return $c->id; }, $bank_cards);
         $bank_card_map = [];
@@ -1900,12 +1913,12 @@ class HBM_API {
             $bank_card_map[$c->id] = $c;
         }
 
-        // 0. Income linked to this bank account
+        // 0. Income linked to this bank account (all users)
         $income_items = $wpdb->get_results($wpdb->prepare(
             "SELECT * FROM {$wpdb->prefix}hbm_income
-             WHERE user_id = %d AND bank_account_id = %d
+             WHERE bank_account_id = %d
              AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)",
-            $user_id, $bank_account_id, $range_end, $range_start
+            $bank_account_id, $range_end, $range_start
         ));
 
         foreach ($income_items as $inc) {
@@ -1941,12 +1954,12 @@ class HBM_API {
             }
         }
 
-        // 1. Direct bank expenses (bank_account_id matches, no credit card)
+        // 1. Direct bank expenses (bank_account_id matches, no credit card) - all users
         $direct_exp_query = "SELECT * FROM {$wpdb->prefix}hbm_expenses
-             WHERE user_id = %d AND bank_account_id = %d
+             WHERE bank_account_id = %d
              AND (credit_card_id IS NULL OR credit_card_id = 0)
              AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)";
-        $direct_exp_args = [$user_id, $bank_account_id, $range_end, $range_start];
+        $direct_exp_args = [$bank_account_id, $range_end, $range_start];
         if ($filter_business) {
             $direct_exp_query .= " AND is_business = %d";
             $direct_exp_args[] = $is_business_val;
@@ -1985,11 +1998,11 @@ class HBM_API {
             }
         }
 
-        // 2. Loan payments from this bank account
+        // 2. Loan payments from this bank account (all users)
         $loan_query = "SELECT * FROM {$wpdb->prefix}hbm_expenses
-             WHERE user_id = %d AND bank_account_id = %d AND type = 'loan'
+             WHERE bank_account_id = %d AND type = 'loan'
              AND start_date <= %s AND (loan_end_date IS NULL OR loan_end_date >= %s)";
-        $loan_args = [$user_id, $bank_account_id, $range_end, $range_start];
+        $loan_args = [$bank_account_id, $range_end, $range_start];
         if ($filter_business) {
             $loan_query .= " AND is_business = %d";
             $loan_args[] = $is_business_val;
@@ -2019,12 +2032,12 @@ class HBM_API {
             }
         }
 
-        // 3. Standing orders from this bank account
+        // 3. Standing orders from this bank account (all users)
         $standing = $wpdb->get_results($wpdb->prepare(
             "SELECT * FROM {$wpdb->prefix}hbm_standing_orders
-             WHERE user_id = %d AND bank_account_id = %d AND is_active = 1
+             WHERE bank_account_id = %d AND is_active = 1
              AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)",
-            $user_id, $bank_account_id, $range_end, $range_start
+            $bank_account_id, $range_end, $range_start
         ));
 
         foreach ($standing as $order) {
@@ -2049,12 +2062,12 @@ class HBM_API {
             }
         }
 
-        // 4. Reserved payments for this bank account
+        // 4. Reserved payments for this bank account (all users)
         $reserved = $wpdb->get_results($wpdb->prepare(
             "SELECT * FROM {$wpdb->prefix}hbm_reserved_payments
-             WHERE user_id = %d AND bank_account_id = %d
+             WHERE bank_account_id = %d
              AND payment_date >= %s AND payment_date <= %s",
-            $user_id, $bank_account_id, $range_start, $range_end
+            $bank_account_id, $range_start, $range_end
         ));
 
         foreach ($reserved as $rp) {
@@ -2285,7 +2298,6 @@ class HBM_API {
     // =========================================================================
     public static function get_credit_card_charges($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
         $credit_card_id = intval($request->get_param('credit_card_id'));
         $month = sanitize_text_field($request->get_param('month') ?? date('Y-m'));
 
@@ -2294,8 +2306,8 @@ class HBM_API {
         }
 
         $card = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}hbm_credit_cards WHERE id = %d AND user_id = %d",
-            $credit_card_id, $user_id
+            "SELECT * FROM {$wpdb->prefix}hbm_credit_cards WHERE id = %d",
+            $credit_card_id
         ));
 
         if (!$card) {
@@ -2308,10 +2320,10 @@ class HBM_API {
 
         $query = $wpdb->prepare(
             "SELECT * FROM {$wpdb->prefix}hbm_expenses
-             WHERE user_id = %d AND credit_card_id = %d
+             WHERE credit_card_id = %d
              AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)
              ORDER BY start_date ASC",
-            $user_id, $credit_card_id, $month_end, $month_start
+            $credit_card_id, $month_end, $month_start
         );
 
         $expenses = $wpdb->get_results($query);
@@ -2378,13 +2390,11 @@ class HBM_API {
 
     public static function check_overdraft($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
 
-        // Get all bank accounts for the user
-        $bank_accounts = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}hbm_bank_accounts WHERE user_id = %d",
-            $user_id
-        ));
+        // Get all personal bank accounts (all users)
+        $bank_accounts = $wpdb->get_results(
+            "SELECT * FROM {$wpdb->prefix}hbm_bank_accounts WHERE (is_business = 0 OR is_business IS NULL)"
+        );
 
         $warnings = [];
 
@@ -2526,9 +2536,9 @@ class HBM_API {
         $month_end = date('Y-m-t', strtotime($month_start));
 
         $query = "SELECT * FROM {$wpdb->prefix}hbm_expenses
-             WHERE user_id = %d AND credit_card_id = %d
+             WHERE credit_card_id = %d
              AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)";
-        $args = [$user_id, $card_id, $month_end, $month_start];
+        $args = [$card_id, $month_end, $month_start];
         if ($filter_business) {
             $query .= " AND is_business = %d";
             $args[] = $is_business_val;
@@ -2645,19 +2655,22 @@ class HBM_API {
 
     public static function get_bank_balances($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
         $target_date = sanitize_text_field($request->get_param('target_date') ?? date('Y-m-d'));
         $is_business = $request->get_param('is_business');
 
-        $query = "SELECT * FROM {$wpdb->prefix}hbm_bank_accounts WHERE user_id = %d";
-        $query_args = [$user_id];
+        $query = "SELECT * FROM {$wpdb->prefix}hbm_bank_accounts WHERE 1=1";
+        $query_args = [];
 
         if ($is_business !== null && $is_business !== '') {
             $query .= " AND is_business = %d";
             $query_args[] = intval($is_business);
         }
 
-        $accounts = $wpdb->get_results($wpdb->prepare($query, $query_args));
+        if (!empty($query_args)) {
+            $accounts = $wpdb->get_results($wpdb->prepare($query, $query_args));
+        } else {
+            $accounts = $wpdb->get_results($query);
+        }
         $balances = [];
 
         foreach ($accounts as $account) {
