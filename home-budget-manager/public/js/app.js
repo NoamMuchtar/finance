@@ -489,8 +489,79 @@
     }
 
     // ===================== Dashboard =====================
+    function getDashboardDateDefaults() {
+        var now = new Date();
+        var year = now.getFullYear();
+        var month = now.getMonth();
+        var startDate = new Date(year, month - 1, 20);
+        var endDate = new Date(year, month, 20);
+        return {
+            start_date: startDate.getFullYear() + '-' + String(startDate.getMonth() + 1).padStart(2, '0') + '-' + String(startDate.getDate()).padStart(2, '0'),
+            end_date: endDate.getFullYear() + '-' + String(endDate.getMonth() + 1).padStart(2, '0') + '-' + String(endDate.getDate()).padStart(2, '0')
+        };
+    }
+
+    function setupDashboardDateControls() {
+        var startEl = document.getElementById('hbm-dashboard-start-date');
+        var endEl = document.getElementById('hbm-dashboard-end-date');
+        if (!startEl || !endEl) return;
+
+        var defaults = getDashboardDateDefaults();
+        if (!startEl.value) startEl.value = defaults.start_date;
+        if (!endEl.value) endEl.value = defaults.end_date;
+
+        var applyBtn = document.getElementById('hbm-dashboard-date-apply');
+        if (applyBtn) {
+            applyBtn.addEventListener('click', function () {
+                loadDashboardData();
+            });
+        }
+
+        var resetBtn = document.getElementById('hbm-dashboard-date-reset');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', function () {
+                var defs = getDashboardDateDefaults();
+                startEl.value = defs.start_date;
+                endEl.value = defs.end_date;
+                loadDashboardData();
+            });
+        }
+    }
+
+    function getDashboardDateParams() {
+        var startEl = document.getElementById('hbm-dashboard-start-date');
+        var endEl = document.getElementById('hbm-dashboard-end-date');
+        if (startEl && startEl.value && endEl && endEl.value) {
+            return { start_date: startEl.value, end_date: endEl.value };
+        }
+        return { month: currentMonth };
+    }
+
+    function loadDashboardData() {
+        var params = getDashboardDateParams();
+        apiRequest('dashboard', 'GET', params).then(function (data) {
+            if (!data || data.error || data.code) return;
+            var totalIncomeEl = document.getElementById('hbm-total-income');
+            if (totalIncomeEl) totalIncomeEl.textContent = formatCurrency(data.total_income);
+            var totalExpensesEl = document.getElementById('hbm-total-expenses');
+            if (totalExpensesEl) totalExpensesEl.textContent = formatCurrency(data.total_expenses);
+            var remainingEl = document.getElementById('hbm-remaining');
+            if (remainingEl) remainingEl.textContent = formatCurrency(data.remaining);
+            var totalAllocatedEl = document.getElementById('hbm-total-allocated');
+            if (totalAllocatedEl) totalAllocatedEl.textContent = formatCurrency(data.total_allocated || 0);
+            var totalSavingsEl = document.getElementById('hbm-total-savings');
+            if (totalSavingsEl) totalSavingsEl.textContent = formatCurrency(data.expenses_by_type.saving || 0);
+
+            renderExpensesByType(data.expenses_by_type);
+            renderExpensesByCategory(data.expenses_by_category);
+            renderBudgetStatus(data.budget_status);
+        });
+    }
+
     function loadDashboard() {
-        apiRequest('dashboard', 'GET', { month: currentMonth }).then(function (data) {
+        setupDashboardDateControls();
+
+        apiRequest('dashboard', 'GET', getDashboardDateParams()).then(function (data) {
             if (!data || data.error || data.code) return;
             var totalIncomeEl = document.getElementById('hbm-total-income');
             if (totalIncomeEl) totalIncomeEl.textContent = formatCurrency(data.total_income);

@@ -2204,6 +2204,14 @@
     font-size: 13px;
 }
 
+.hbm-dashboard-date-controls {
+    margin-bottom: 16px;
+    padding: 12px 16px;
+    background: #f8fafc;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+}
+
 .hbm-cashflow-charge-row {
     background: rgba(59, 130, 246, 0.04) !important;
     border-right: 3px solid var(--hbm-primary);

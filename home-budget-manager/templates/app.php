@@ -43,6 +43,15 @@ if (!defined('ABSPATH')) {
         <section id="hbm-page-dashboard" class="hbm-page active">
             <div class="hbm-page-header"><h2>דאשבורד</h2></div>
 
+            <div class="hbm-dashboard-date-controls">
+                <div class="hbm-cashflow-dates">
+                    <label>מתאריך: <input type="date" id="hbm-dashboard-start-date" class="hbm-input-sm"></label>
+                    <label>עד תאריך: <input type="date" id="hbm-dashboard-end-date" class="hbm-input-sm"></label>
+                    <button class="hbm-btn hbm-btn-sm" id="hbm-dashboard-date-apply">הצג</button>
+                    <button class="hbm-btn hbm-btn-sm hbm-btn-outline" id="hbm-dashboard-date-reset">איפוס</button>
+                </div>
+            </div>
+
             <div id="hbm-overdraft-warning" class="hbm-alert hbm-alert-danger" style="display:none;">
                 <div class="hbm-alert-icon">⚠️</div>
                 <div class="hbm-alert-content">

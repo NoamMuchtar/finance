@@ -647,9 +647,19 @@ class HBM_API {
     public static function get_dashboard($request) {
         global $wpdb;
         $user_id = get_current_user_id();
-        $month = sanitize_text_field($request->get_param('month') ?? date('Y-m'));
-        $month_start = $month . '-01';
-        $month_end = date('Y-m-t', strtotime($month_start));
+
+        $custom_start = sanitize_text_field($request->get_param('start_date') ?? '');
+        $custom_end = sanitize_text_field($request->get_param('end_date') ?? '');
+
+        if ($custom_start && $custom_end) {
+            $month_start = $custom_start;
+            $month_end = $custom_end;
+            $month = substr($custom_end, 0, 7);
+        } else {
+            $month = sanitize_text_field($request->get_param('month') ?? date('Y-m'));
+            $month_start = $month . '-01';
+            $month_end = date('Y-m-t', strtotime($month_start));
+        }
 
         $income = $wpdb->get_results($wpdb->prepare(
             "SELECT * FROM {$wpdb->prefix}hbm_income
@@ -731,6 +741,8 @@ class HBM_API {
 
         return rest_ensure_response([
             'month' => $month,
+            'start_date' => $month_start,
+            'end_date' => $month_end,
             'total_income' => $total_income,
             'total_expenses' => $total_expenses,
             'total_allocated' => $total_allocated,
@@ -882,6 +894,7 @@ class HBM_API {
             'bank_name' => sanitize_text_field($params['bank_name'] ?? ''),
             'credit_limit' => floatval($params['credit_limit'] ?? 0),
             'initial_balance' => floatval($params['initial_balance'] ?? 0),
+            'balance_date' => date('Y-m-d'),
         ];
 
         $is_business = intval($params['is_business'] ?? 0);
@@ -926,6 +939,7 @@ class HBM_API {
         }
         if (isset($params['initial_balance'])) {
             $data['initial_balance'] = floatval($params['initial_balance']);
+            $data['balance_date'] = date('Y-m-d');
         }
 
         if (empty($data)) {
@@ -1385,6 +1399,7 @@ class HBM_API {
         }
 
         $initial_balance = floatval($bank_account->initial_balance);
+        $balance_date = $bank_account->balance_date ?: date('Y-m-d');
         $custom_start = sanitize_text_field($request->get_param('start_date') ?? '');
         $custom_end = sanitize_text_field($request->get_param('end_date') ?? '');
         $today = $custom_start ?: date('Y-m-d');
@@ -1393,7 +1408,6 @@ class HBM_API {
         $entries = [];
 
         // 1. Past transactions affecting this bank account
-        // Bank transfer expenses
         $past_exp_query = "SELECT * FROM {$wpdb->prefix}hbm_expenses
              WHERE user_id = %d AND bank_account_id = %d AND start_date <= %s";
         $past_exp_args = [$user_id, $bank_account_id, $today];
@@ -1405,26 +1419,30 @@ class HBM_API {
 
         foreach ($past_expenses as $exp) {
             if ($exp->type === 'one_time') {
-                $entries[] = [
-                    'date' => $exp->start_date,
-                    'description' => $exp->title,
-                    'type' => 'expense_' . $exp->type,
-                    'amount' => -floatval($exp->amount),
-                    'is_charge' => true,
-                ];
-            } elseif ($exp->type === 'fixed' || $exp->type === 'saving') {
-                // Monthly recurring - generate entries for each past month
-                $start = new DateTime($exp->start_date);
-                $end_dt = $exp->end_date ? new DateTime(min($exp->end_date, $today)) : new DateTime($today);
-                $current = clone $start;
-                while ($current <= $end_dt) {
+                if ($exp->start_date > $balance_date) {
                     $entries[] = [
-                        'date' => $current->format('Y-m-d'),
+                        'date' => $exp->start_date,
                         'description' => $exp->title,
                         'type' => 'expense_' . $exp->type,
                         'amount' => -floatval($exp->amount),
                         'is_charge' => true,
                     ];
+                }
+            } elseif ($exp->type === 'fixed' || $exp->type === 'saving') {
+                $start = new DateTime($exp->start_date);
+                $end_dt = $exp->end_date ? new DateTime(min($exp->end_date, $today)) : new DateTime($today);
+                $current = clone $start;
+                while ($current <= $end_dt) {
+                    $entry_date = $current->format('Y-m-d');
+                    if ($entry_date > $balance_date) {
+                        $entries[] = [
+                            'date' => $entry_date,
+                            'description' => $exp->title,
+                            'type' => 'expense_' . $exp->type,
+                            'amount' => -floatval($exp->amount),
+                            'is_charge' => true,
+                        ];
+                    }
                     $current->modify('+1 month');
                 }
             } elseif ($exp->type === 'loan') {
@@ -1435,13 +1453,15 @@ class HBM_API {
                 while ($current <= $end_dt && $monthly > 0) {
                     $pay_day = $exp->loan_payment_day ? intval($exp->loan_payment_day) : intval($current->format('d'));
                     $payment_date = $current->format('Y-m') . '-' . sprintf('%02d', min($pay_day, intval(date('t', strtotime($current->format('Y-m-01'))))));
-                    $entries[] = [
-                        'date' => $payment_date,
-                        'description' => $exp->title,
-                        'type' => 'loan_payment',
-                        'amount' => -$monthly,
-                        'is_charge' => true,
-                    ];
+                    if ($payment_date > $balance_date) {
+                        $entries[] = [
+                            'date' => $payment_date,
+                            'description' => $exp->title,
+                            'type' => 'loan_payment',
+                            'amount' => -$monthly,
+                            'is_charge' => true,
+                        ];
+                    }
                     $current->modify('+1 month');
                 }
             } elseif ($exp->type === 'installment') {
@@ -1450,14 +1470,17 @@ class HBM_API {
                 for ($i = 0; $i < $exp->total_installments; $i++) {
                     $pay_dt = clone $start;
                     $pay_dt->modify("+{$i} months");
-                    if ($pay_dt->format('Y-m-d') > $today) break;
-                    $entries[] = [
-                        'date' => $pay_dt->format('Y-m-d'),
-                        'description' => $exp->title . " (תשלום " . ($i + 1) . "/" . $exp->total_installments . ")",
-                        'type' => 'installment_payment',
-                        'amount' => -$inst_amount,
-                        'is_charge' => true,
-                    ];
+                    $pdate = $pay_dt->format('Y-m-d');
+                    if ($pdate > $today) break;
+                    if ($pdate > $balance_date) {
+                        $entries[] = [
+                            'date' => $pdate,
+                            'description' => $exp->title . " (תשלום " . ($i + 1) . "/" . $exp->total_installments . ")",
+                            'type' => 'installment_payment',
+                            'amount' => -$inst_amount,
+                            'is_charge' => true,
+                        ];
+                    }
                 }
             }
         }
@@ -1478,7 +1501,7 @@ class HBM_API {
                 $days_in = intval(date('t', strtotime($current->format('Y-m-01'))));
                 $actual_day = min($dom, $days_in);
                 $order_date = $current->format('Y-m') . '-' . sprintf('%02d', $actual_day);
-                if ($order_date <= $today) {
+                if ($order_date <= $today && $order_date > $balance_date) {
                     $entries[] = [
                         'date' => $order_date,
                         'description' => $order->title,
@@ -1491,11 +1514,11 @@ class HBM_API {
             }
         }
 
-        // Past reserved payments for this bank account
+        // Past reserved payments for this bank account (only after balance_date)
         $past_reserved = $wpdb->get_results($wpdb->prepare(
             "SELECT * FROM {$wpdb->prefix}hbm_reserved_payments
-             WHERE user_id = %d AND bank_account_id = %d AND is_paid = 1 AND payment_date <= %s",
-            $user_id, $bank_account_id, $today
+             WHERE user_id = %d AND bank_account_id = %d AND is_paid = 1 AND payment_date <= %s AND payment_date > %s",
+            $user_id, $bank_account_id, $today, $balance_date
         ));
 
         foreach ($past_reserved as $rp) {

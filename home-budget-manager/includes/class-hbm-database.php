@@ -102,6 +102,7 @@ class HBM_Database {
             bank_name varchar(255) NOT NULL,
             credit_limit decimal(12,2) DEFAULT 0.00,
             initial_balance decimal(12,2) DEFAULT 0.00,
+            balance_date date DEFAULT NULL,
             is_business tinyint(1) DEFAULT 0,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -245,11 +246,16 @@ class HBM_Database {
             $wpdb->query("ALTER TABLE {$table} ADD COLUMN is_business tinyint(1) DEFAULT 0 AFTER billing_day");
         }
 
-        // Add is_business to bank_accounts if not exists
+        // Add balance_date and is_business to bank_accounts if not exists
         $table = "{$wpdb->prefix}hbm_bank_accounts";
+        $col = $wpdb->get_results("SHOW COLUMNS FROM {$table} LIKE 'balance_date'");
+        if (empty($col)) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN balance_date date DEFAULT NULL AFTER initial_balance");
+            $wpdb->query("UPDATE {$table} SET balance_date = CURDATE() WHERE balance_date IS NULL");
+        }
         $col = $wpdb->get_results("SHOW COLUMNS FROM {$table} LIKE 'is_business'");
         if (empty($col)) {
-            $wpdb->query("ALTER TABLE {$table} ADD COLUMN is_business tinyint(1) DEFAULT 0 AFTER initial_balance");
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN is_business tinyint(1) DEFAULT 0 AFTER balance_date");
         }
 
         // Add is_business to income if not exists
