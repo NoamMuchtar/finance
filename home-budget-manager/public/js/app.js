@@ -642,6 +642,7 @@
             renderBudgetStatus(data.budget_status);
             renderExpenseDetails(data.expense_details, 'hbm-expense-details');
             renderRecentCcTransactions(data.recent_cc_transactions, 'hbm-recent-cc-transactions');
+            renderIncomeDetails(data.income_items, 'hbm-income-details');
         });
         loadDashboardBankBalances();
     }
@@ -667,6 +668,7 @@
             renderBudgetStatus(data.budget_status);
             renderExpenseDetails(data.expense_details, 'hbm-expense-details');
             renderRecentCcTransactions(data.recent_cc_transactions, 'hbm-recent-cc-transactions');
+            renderIncomeDetails(data.income_items, 'hbm-income-details');
         });
 
         loadOverdraftWarning();
@@ -700,6 +702,32 @@
             html += '</tbody></table>';
             container.innerHTML = html;
         });
+    }
+
+    function renderIncomeDetails(items, containerId) {
+        var container = document.getElementById(containerId);
+        if (!container) return;
+        if (!items || items.length === 0) {
+            container.innerHTML = '<div class="hbm-empty-state"><p>אין הכנסות בתקופה זו</p></div>';
+            return;
+        }
+        var html = '<table class="hbm-table hbm-table-striped"><thead><tr>' +
+            '<th>תיאור</th><th>מקור</th><th>סוג</th><th>תאריך התחלה</th><th>סכום</th>' +
+            '</tr></thead><tbody>';
+        items.forEach(function (item) {
+            var typeLabel = item.is_recurring == 1
+                ? '<span class="hbm-badge hbm-badge-success">קבועה</span>'
+                : '<span class="hbm-badge hbm-badge-default">חד פעמי</span>';
+            html += '<tr>' +
+                '<td><strong>' + escapeHtml(item.title) + '</strong></td>' +
+                '<td>' + escapeHtml(item.source || '-') + '</td>' +
+                '<td>' + typeLabel + '</td>' +
+                '<td>' + formatDate(item.start_date) + '</td>' +
+                '<td class="hbm-amount-cell hbm-text-success">' + formatCurrency(item.amount) + '</td>' +
+                '</tr>';
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
     }
 
     function renderExpenseDetails(details, containerId) {

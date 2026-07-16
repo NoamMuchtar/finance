@@ -115,6 +115,11 @@ if (!defined('ABSPATH')) {
             </div>
 
             <div class="hbm-panel" style="margin-top:20px;">
+                <h3>פירוט הכנסות</h3>
+                <div id="hbm-income-details" class="hbm-table-container"></div>
+            </div>
+
+            <div class="hbm-panel" style="margin-top:20px;">
                 <h3>פירוט הוצאות</h3>
                 <div id="hbm-expense-details" class="hbm-table-container"></div>
             </div>
