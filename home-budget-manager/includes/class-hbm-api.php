@@ -781,7 +781,12 @@ class HBM_API {
 
         $wpdb->update("{$wpdb->prefix}hbm_bank_accounts", $data, ['id' => $id, 'user_id' => $user_id]);
 
-        return rest_ensure_response(['success' => true]);
+        $updated = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}hbm_bank_accounts WHERE id = %d AND user_id = %d",
+            $id, $user_id
+        ));
+
+        return rest_ensure_response($updated);
     }
 
     public static function delete_bank_account($request) {

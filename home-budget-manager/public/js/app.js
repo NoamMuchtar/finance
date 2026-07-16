@@ -342,19 +342,21 @@
         var last4 = document.getElementById('hbm-new-cc-last4');
         var billingDay = document.getElementById('hbm-new-cc-billing-day');
         var name = document.getElementById('hbm-new-cc-name');
-        if (!last4 || !billingDay) return;
-        if (!last4.value || !billingDay.value) { alert('יש למלא 4 ספרות אחרונות ויום חיוב'); return; }
+        if (!last4 || !billingDay || !name) return;
+        if (!last4.value || !billingDay.value || !name.value) { alert('יש למלא שם כרטיס, 4 ספרות אחרונות ויום חיוב'); return; }
 
         apiRequest('credit-cards', 'POST', {
             last_four: last4.value,
             billing_day: parseInt(billingDay.value),
-            card_name: name ? name.value : ''
+            card_name: name.value
         }).then(function (data) {
             if (data && data.id) {
                 last4.value = '';
                 billingDay.value = '';
-                if (name) name.value = '';
+                name.value = '';
                 loadCreditCards();
+            } else {
+                alert('שגיאה בשמירת כרטיס אשראי: ' + (data && data.message ? data.message : 'שגיאה לא ידועה'));
             }
         });
     }
@@ -422,6 +424,8 @@
                 if (creditLimit) creditLimit.value = '';
                 if (initialBalance) initialBalance.value = '';
                 loadBankAccounts();
+            } else {
+                alert('שגיאה בשמירת חשבון בנק: ' + (data && data.message ? data.message : 'שגיאה לא ידועה'));
             }
         });
     }
@@ -555,13 +559,13 @@
                 '</tr></thead><tbody>';
 
             data.entries.forEach(function (entry) {
-                var rowClass = entry.is_charge_date ? ' class="hbm-cashflow-charge-row"' : '';
+                var rowClass = entry.is_charge ? ' class="hbm-cashflow-charge-row"' : '';
                 html += '<tr' + rowClass + '>' +
                     '<td>' + formatDate(entry.date) + '</td>' +
                     '<td>' + escapeHtml(entry.description) + '</td>' +
                     '<td>' + escapeHtml(entry.type_label || entry.type || '-') + '</td>' +
                     '<td><strong>' + formatCurrency(entry.amount) + '</strong></td>' +
-                    '<td>' + formatCurrency(entry.balance) + '</td>' +
+                    '<td>' + formatCurrency(entry.running_balance) + '</td>' +
                     '</tr>';
             });
 
@@ -987,7 +991,7 @@
                 '</tr></thead><tbody>';
 
             data.forEach(function (item) {
-                var typeLabel = item.so_type === 'bank' ? 'בנק' : 'אשראי';
+                var typeLabel = item.type === 'bank' ? 'בנק' : 'אשראי';
                 html += '<tr>' +
                     '<td>' + escapeHtml(item.title) + '</td>' +
                     '<td>' + escapeHtml(item.payee || '-') + '</td>' +
@@ -1015,7 +1019,7 @@
             catOptions += '<option value="' + key + '" ' + selected + '>' + CATEGORIES[key] + '</option>';
         });
 
-        var soType = editData ? editData.so_type || 'bank' : 'bank';
+        var soType = editData ? editData.type || 'bank' : 'bank';
 
         var html = '<form id="hbm-standing-order-form">' +
             '<div class="hbm-form-group"><label>כותרת</label>' +
@@ -1030,7 +1034,7 @@
             '<div class="hbm-form-group"><label>קטגוריה</label>' +
             '<select name="category">' + catOptions + '</select></div>' +
             '<div class="hbm-form-group"><label>סוג</label>' +
-            '<select name="so_type" id="hbm-so-type">' +
+            '<select name="type" id="hbm-so-type">' +
             '<option value="bank"' + (soType === 'bank' ? ' selected' : '') + '>בנק</option>' +
             '<option value="credit"' + (soType === 'credit' ? ' selected' : '') + '>אשראי</option>' +
             '</select></div>' +
@@ -1075,15 +1079,15 @@
                 payee: form.payee.value,
                 amount: parseFloat(form.amount.value),
                 category: form.category.value,
-                so_type: form.so_type.value,
+                type: form.type.value,
                 day_of_month: parseInt(form.day_of_month.value),
                 start_date: form.start_date.value,
             };
             if (form.end_date.value) payload.end_date = form.end_date.value;
-            if (form.so_type.value === 'credit' && form.credit_card_id.value) {
+            if (form.type.value === 'credit' && form.credit_card_id.value) {
                 payload.credit_card_id = form.credit_card_id.value;
             }
-            if (form.so_type.value === 'bank' && form.bank_account_id.value) {
+            if (form.type.value === 'bank' && form.bank_account_id.value) {
                 payload.bank_account_id = form.bank_account_id.value;
             }
 
