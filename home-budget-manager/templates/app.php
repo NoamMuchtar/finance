@@ -371,7 +371,13 @@ if (!defined('ABSPATH')) {
                         </div>
                     </label>
                 </div>
-                <button class="hbm-btn hbm-btn-primary hbm-btn-sm" onclick="hbmApp.saveUserType()" style="margin-top:12px;">שמור סוג משתמש</button>
+                <div style="margin-top:12px;">
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                        <input type="checkbox" id="hbm-is-business-user">
+                        <span>משתמש עסקי (הצג מסכים עסקיים)</span>
+                    </label>
+                </div>
+                <button class="hbm-btn hbm-btn-primary hbm-btn-sm" onclick="hbmApp.saveUserType()" style="margin-top:12px;">שמור הגדרות</button>
             </div>
 
             <div class="hbm-panel hbm-settings-section">

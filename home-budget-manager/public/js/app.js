@@ -26,6 +26,7 @@
     var activeCcChargesCardId = null;
     var activeCcChargesIsBiz = false;
     var savingsAccounts = [];
+    var currentUser = { id: 0, display_name: '', is_business_user: false };
 
     var MONTHS_HE = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
     var TYPE_LABELS = { fixed: 'קבועה', installment: 'תשלומים', loan: 'הלוואה', saving: 'חיסכון', one_time: 'חד פעמי' };
@@ -38,12 +39,24 @@
         setupMonthSelector();
         setupTabs();
         setupModals();
+        loadCurrentUser();
         loadUserSettings();
         loadCreditCards();
         loadBankAccounts();
         loadAllocationsData();
         loadSavingsAccounts();
         loadDashboard();
+    }
+
+    function loadCurrentUser() {
+        apiRequest('current-user', 'GET').then(function (data) {
+            if (data && !data.error) {
+                currentUser = data;
+                updateNavVisibility();
+                var bizCheckbox = document.getElementById('hbm-is-business-user');
+                if (bizCheckbox) bizCheckbox.checked = currentUser.is_business_user;
+            }
+        });
     }
 
     function apiRequest(endpoint, method, data) {
@@ -206,7 +219,7 @@
     }
 
     function updateNavVisibility() {
-        var isSelfEmployed = userType === 'self_employed';
+        var isSelfEmployed = userType === 'self_employed' || currentUser.is_business_user;
         var navCollections = document.getElementById('hbm-nav-collections');
         if (navCollections) navCollections.style.display = isSelfEmployed ? '' : 'none';
         var navBusiness = document.getElementById('hbm-nav-business');
@@ -353,27 +366,38 @@
                 radios.forEach(function (r) {
                     r.checked = r.value === userType;
                 });
-                if (userType === 'self_employed') {
+                if (userType === 'self_employed' || currentUser.is_business_user) {
                     loadBusinessCreditCards();
                     loadBusinessBankAccounts();
                 }
             }
         });
+        var bizCheckbox = document.getElementById('hbm-is-business-user');
+        if (bizCheckbox) {
+            bizCheckbox.checked = currentUser.is_business_user;
+        }
     }
 
     function saveUserType() {
         var selected = document.querySelector('input[name="hbm-user-type"]:checked');
         if (!selected) return;
         userType = selected.value;
-        apiRequest('user-settings', 'POST', { user_type: userType }).then(function () {
+        var bizCheckbox = document.getElementById('hbm-is-business-user');
+        var isBiz = bizCheckbox ? (bizCheckbox.checked ? 1 : 0) : 0;
+        apiRequest('user-settings', 'POST', { user_type: userType, is_business_user: isBiz }).then(function () {
+            currentUser.is_business_user = !!isBiz;
             updateNavVisibility();
-            alert('סוג המשתמש נשמר בהצלחה!');
+            if (currentUser.is_business_user) {
+                loadBusinessCreditCards();
+                loadBusinessBankAccounts();
+            }
+            alert('ההגדרות נשמרו בהצלחה!');
         });
     }
 
     // ===================== Credit Cards =====================
     function loadCreditCards() {
-        apiRequest('credit-cards', 'GET', { is_business: 0 }).then(function (data) {
+        apiRequest('credit-cards', 'GET', { is_business: 0, scope: 'all' }).then(function (data) {
             if (data && !data.error && Array.isArray(data)) {
                 creditCards = data;
                 renderCreditCardsList();
@@ -396,12 +420,14 @@
                 var ba = bankAccounts.find(function (a) { return a.id == card.bank_account_id; });
                 if (ba) bankLabel = ' | חשבון: ' + escapeHtml(ba.bank_name) + ' ***' + escapeHtml(ba.last_three);
             }
+            var ownerLabel = card.reported_by ? ' | ' + escapeHtml(card.reported_by) : '';
+            var isOwn = card.user_id == currentUser.id;
             html += '<div class="hbm-settings-item">' +
-                '<span>' + (card.card_name ? escapeHtml(card.card_name) + ' - ' : '') + '**** ' + escapeHtml(card.last_four) + ' | יום חיוב: ' + card.billing_day + bankLabel + '</span>' +
-                '<div class="hbm-settings-item-actions">' +
+                '<span>' + (card.card_name ? escapeHtml(card.card_name) + ' - ' : '') + '**** ' + escapeHtml(card.last_four) + ' | יום חיוב: ' + card.billing_day + bankLabel + ownerLabel + '</span>' +
+                (isOwn ? '<div class="hbm-settings-item-actions">' +
                 '<button class="hbm-btn hbm-btn-sm" onclick="hbmApp.editCreditCard(' + card.id + ')">ערוך</button>' +
                 '<button class="hbm-btn hbm-btn-danger hbm-btn-sm" onclick="hbmApp.deleteCreditCard(' + card.id + ')">מחק</button>' +
-                '</div></div>';
+                '</div>' : '') + '</div>';
         });
         container.innerHTML = html;
         var bankSelect = document.getElementById('hbm-new-cc-bank-account');
@@ -486,7 +512,7 @@
 
     // ===================== Bank Accounts =====================
     function loadBankAccounts() {
-        apiRequest('bank-accounts', 'GET', { is_business: 0 }).then(function (data) {
+        apiRequest('bank-accounts', 'GET', { is_business: 0, scope: 'all' }).then(function (data) {
             if (data && !data.error && Array.isArray(data)) {
                 bankAccounts = data;
                 renderBankAccountsList();
@@ -504,14 +530,16 @@
         }
         var html = '';
         bankAccounts.forEach(function (acct) {
+            var ownerLabel = acct.reported_by ? ' | ' + escapeHtml(acct.reported_by) : '';
+            var isOwn = acct.user_id == currentUser.id;
             html += '<div class="hbm-settings-item">' +
                 '<span>' + escapeHtml(acct.bank_name) + ' - ***' + escapeHtml(acct.last_three) +
                 ' | מסגרת: ' + formatCurrency(acct.credit_limit || 0) +
-                ' | יתרה: ' + formatCurrency(acct.initial_balance || 0) + '</span>' +
-                '<div>' +
+                ' | יתרה: ' + formatCurrency(acct.initial_balance || 0) + ownerLabel + '</span>' +
+                (isOwn ? '<div>' +
                 '<button class="hbm-btn hbm-btn-ghost hbm-btn-sm" onclick="hbmApp.editBankAccount(' + acct.id + ')">ערוך</button> ' +
                 '<button class="hbm-btn hbm-btn-danger hbm-btn-sm" onclick="hbmApp.deleteBankAccount(' + acct.id + ')">מחק</button>' +
-                '</div></div>';
+                '</div>' : '') + '</div>';
         });
         container.innerHTML = html;
     }
@@ -678,7 +706,7 @@
             return;
         }
         var html = '<table class="hbm-table hbm-table-striped"><thead><tr>' +
-            '<th>תיאור</th><th>מקור</th><th>סוג</th><th>תאריך התחלה</th><th>סכום</th>' +
+            '<th>תיאור</th><th>מקור</th><th>סוג</th><th>תאריך התחלה</th><th>סכום</th><th>דווח ע"י</th>' +
             '</tr></thead><tbody>';
         items.forEach(function (item) {
             var typeLabel = item.is_recurring == 1
@@ -690,6 +718,7 @@
                 '<td>' + typeLabel + '</td>' +
                 '<td>' + formatDate(item.start_date) + '</td>' +
                 '<td class="hbm-amount-cell hbm-text-success">' + formatCurrency(item.amount) + '</td>' +
+                '<td>' + escapeHtml(item.reported_by || '-') + '</td>' +
                 '</tr>';
         });
         html += '</tbody></table>';
@@ -704,7 +733,7 @@
             return;
         }
         var html = '<table class="hbm-table hbm-table-striped"><thead><tr>' +
-            '<th>תיאור</th><th>סוג</th><th>קטגוריה</th><th>תאריך הורדה</th><th>סכום</th>' +
+            '<th>תיאור</th><th>סוג</th><th>קטגוריה</th><th>תאריך הורדה</th><th>סכום</th><th>דווח ע"י</th>' +
             '</tr></thead><tbody>';
         details.forEach(function (item) {
             var typeLabel, rowClass = '';
@@ -727,6 +756,7 @@
                 '<td>' + catLabel + '</td>' +
                 '<td>' + deductionDate + '</td>' +
                 '<td class="hbm-amount-cell">' + formatCurrency(item.amount) + '</td>' +
+                '<td>' + escapeHtml(item.reported_by || '-') + '</td>' +
                 '</tr>';
         });
         html += '</tbody></table>';
@@ -1419,7 +1449,7 @@
             }
 
             var html = '<table class="hbm-table"><thead><tr>' +
-                '<th>שם</th><th>מקור</th><th>סכום</th><th>חשבון בנק</th><th>תאריך התחלה</th><th>תאריך סיום</th><th>סטטוס</th><th>פעולות</th>' +
+                '<th>שם</th><th>מקור</th><th>סכום</th><th>חשבון בנק</th><th>תאריך התחלה</th><th>תאריך סיום</th><th>סטטוס</th><th>דווח ע"י</th><th>פעולות</th>' +
                 '</tr></thead><tbody>';
 
             var today = new Date().toISOString().slice(0, 10);
@@ -1449,6 +1479,7 @@
                     '<td>' + formatDate(item.start_date) + '</td>' +
                     '<td>' + formatDate(item.end_date) + '</td>' +
                     '<td><span class="hbm-badge ' + statusClass + '">' + status + '</span></td>' +
+                    '<td>' + escapeHtml(item.reported_by || '-') + '</td>' +
                     '<td><button class="hbm-btn hbm-btn-ghost hbm-btn-sm" onclick="hbmApp.editIncome(' + item.id + ')">✏️</button> ' +
                     '<button class="hbm-btn hbm-btn-danger hbm-btn-sm" onclick="hbmApp.deleteIncome(' + item.id + ')">🗑️</button></td>' +
                     '</tr>';
@@ -1538,7 +1569,7 @@
             }
 
             var html = '<table class="hbm-table"><thead><tr>' +
-                '<th>שם</th><th>סוג</th><th>למי</th><th>קטגוריה</th><th>סכום</th><th>פרטים</th><th>פעולות</th>' +
+                '<th>שם</th><th>סוג</th><th>למי</th><th>קטגוריה</th><th>סכום</th><th>פרטים</th><th>דווח ע"י</th><th>פעולות</th>' +
                 '</tr></thead><tbody>';
 
             data.forEach(function (item) {
@@ -1551,6 +1582,7 @@
                     '<td>' + getCategoryLabel(item.category) + '</td>' +
                     '<td><strong>' + formatCurrency(getDisplayAmount(item)) + '</strong></td>' +
                     '<td>' + details + '</td>' +
+                    '<td>' + escapeHtml(item.reported_by || '-') + '</td>' +
                     '<td><button class="hbm-btn hbm-btn-ghost hbm-btn-sm" onclick="hbmApp.editExpense(' + item.id + ')">✏️</button> ' +
                     '<button class="hbm-btn hbm-btn-danger hbm-btn-sm" onclick="hbmApp.deleteExpense(' + item.id + ')">🗑️</button></td>' +
                     '</tr>';
@@ -1811,7 +1843,7 @@
             }
 
             var html = '<table class="hbm-table"><thead><tr>' +
-                '<th>כותרת</th><th>למי</th><th>סכום</th><th>קטגוריה</th><th>סוג</th><th>יום בחודש</th><th>תאריך התחלה</th><th>תאריך סיום</th><th>פעולות</th>' +
+                '<th>כותרת</th><th>למי</th><th>סכום</th><th>קטגוריה</th><th>סוג</th><th>יום בחודש</th><th>תאריך התחלה</th><th>תאריך סיום</th><th>דווח ע"י</th><th>פעולות</th>' +
                 '</tr></thead><tbody>';
 
             data.forEach(function (item) {
@@ -1825,6 +1857,7 @@
                     '<td>' + (item.day_of_month || '-') + '</td>' +
                     '<td>' + formatDate(item.start_date) + '</td>' +
                     '<td>' + formatDate(item.end_date) + '</td>' +
+                    '<td>' + escapeHtml(item.reported_by || '-') + '</td>' +
                     '<td><button class="hbm-btn hbm-btn-ghost hbm-btn-sm" onclick="hbmApp.editStandingOrder(' + item.id + ')">✏️</button> ' +
                     '<button class="hbm-btn hbm-btn-danger hbm-btn-sm" onclick="hbmApp.deleteStandingOrder(' + item.id + ')">🗑️</button></td>' +
                     '</tr>';
@@ -1946,7 +1979,7 @@
             data.sort(function (a, b) { return new Date(a.payment_date) - new Date(b.payment_date); });
 
             var html = '<table class="hbm-table"><thead><tr>' +
-                '<th>כותרת</th><th>למי</th><th>סכום</th><th>תאריך תשלום</th><th>פרטים</th><th>חשבון בנק</th><th>סטטוס</th><th>פעולות</th>' +
+                '<th>כותרת</th><th>למי</th><th>סכום</th><th>תאריך תשלום</th><th>פרטים</th><th>חשבון בנק</th><th>סטטוס</th><th>דווח ע"י</th><th>פעולות</th>' +
                 '</tr></thead><tbody>';
 
             data.forEach(function (item) {
@@ -1966,6 +1999,7 @@
                     '<td>' + escapeHtml(item.details || '-') + '</td>' +
                     '<td>' + bankLabel + '</td>' +
                     '<td>' + paidBadge + '</td>' +
+                    '<td>' + escapeHtml(item.reported_by || '-') + '</td>' +
                     '<td>' +
                     '<button class="hbm-btn hbm-btn-ghost hbm-btn-sm" onclick="hbmApp.toggleReservedPaymentPaid(' + item.id + ', ' + (item.is_paid ? 0 : 1) + ')">' + (item.is_paid ? 'סמן כלא שולם' : 'סמן כשולם') + '</button> ' +
                     '<button class="hbm-btn hbm-btn-danger hbm-btn-sm" onclick="hbmApp.deleteReservedPayment(' + item.id + ')">🗑️</button>' +
@@ -2272,6 +2306,7 @@
                     '<span>נוצל: ' + formatCurrency(used) + '</span>' +
                     '<span>נותר: ' + formatCurrency(remaining) + '</span>' +
                     (a.deduction_date ? '<span>תאריך הורדה: ' + formatDate(a.deduction_date) + '</span>' : '') +
+                    (a.reported_by ? '<span>דווח ע"י: ' + escapeHtml(a.reported_by) + '</span>' : '') +
                     '</div>' +
                     '<div class="hbm-allocation-bar"><div class="hbm-allocation-bar-fill ' + barClass + '" style="width:' + pct + '%"></div></div>' +
                     '</div></div>';
