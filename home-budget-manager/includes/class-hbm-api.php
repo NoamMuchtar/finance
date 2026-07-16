@@ -1916,7 +1916,7 @@ class HBM_API {
             if ($exp->type === 'installment') {
                 $months_passed = self::months_between($exp->start_date, $month_start);
                 $current_installment = $months_passed + 1;
-                if ($current_installment > intval($exp->total_installments)) continue;
+                if ($current_installment < 1 || $current_installment > intval($exp->total_installments)) continue;
                 $inst_amount = floatval($exp->installment_amount ?: ($exp->amount / $exp->total_installments));
                 $charges[] = [
                     'id' => intval($exp->id),
@@ -2105,10 +2105,9 @@ class HBM_API {
     }
 
     private static function months_between($start, $end) {
-        $start_date = new DateTime($start);
-        $end_date = new DateTime($end);
-        $interval = $start_date->diff($end_date);
-        return ($interval->y * 12) + $interval->m;
+        $s = explode('-', substr($start, 0, 7));
+        $e = explode('-', substr($end, 0, 7));
+        return (intval($e[0]) - intval($s[0])) * 12 + (intval($e[1]) - intval($s[1]));
     }
 
     // =========================================================================

@@ -922,7 +922,14 @@
 
         var monthEl = document.getElementById('hbm-cc-charges-month');
         if (monthEl && !monthEl.value) {
-            monthEl.value = currentMonth;
+            var now = new Date();
+            var billingDay = card ? parseInt(card.billing_day) : 1;
+            var chargeDate = now.getDate() > billingDay
+                ? new Date(now.getFullYear(), now.getMonth() + 1, 1)
+                : new Date(now.getFullYear(), now.getMonth(), 1);
+            var cy = chargeDate.getFullYear();
+            var cm = ('0' + (chargeDate.getMonth() + 1)).slice(-2);
+            monthEl.value = cy + '-' + cm;
         }
 
         var applyBtn = document.getElementById('hbm-cc-charges-apply');
