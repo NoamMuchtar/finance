@@ -22,6 +22,7 @@ class HBM_Database {
             start_date date NOT NULL,
             end_date date DEFAULT NULL,
             is_business tinyint(1) DEFAULT 0,
+            bank_account_id bigint(20) unsigned DEFAULT NULL,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -263,6 +264,12 @@ class HBM_Database {
         $col = $wpdb->get_results("SHOW COLUMNS FROM {$table} LIKE 'is_business'");
         if (empty($col)) {
             $wpdb->query("ALTER TABLE {$table} ADD COLUMN is_business tinyint(1) DEFAULT 0 AFTER end_date");
+        }
+
+        // Add bank_account_id to income if not exists
+        $col = $wpdb->get_results("SHOW COLUMNS FROM {$table} LIKE 'bank_account_id'");
+        if (empty($col)) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN bank_account_id bigint(20) unsigned DEFAULT NULL AFTER is_business");
         }
 
         // Alter budget_allocations: add label if not exists

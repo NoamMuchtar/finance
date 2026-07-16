@@ -136,6 +136,16 @@ class HBM_API {
         register_rest_route($namespace, '/overdraft-check', [
             ['methods' => 'GET', 'callback' => [__CLASS__, 'check_overdraft'], 'permission_callback' => [__CLASS__, 'check_auth']],
         ]);
+
+        // Salary Transfer (business expense + personal income)
+        register_rest_route($namespace, '/salary-transfer', [
+            ['methods' => 'POST', 'callback' => [__CLASS__, 'create_salary_transfer'], 'permission_callback' => [__CLASS__, 'check_auth']],
+        ]);
+
+        // Bank Balances Projection
+        register_rest_route($namespace, '/bank-balances', [
+            ['methods' => 'GET', 'callback' => [__CLASS__, 'get_bank_balances'], 'permission_callback' => [__CLASS__, 'check_auth']],
+        ]);
     }
 
     public static function check_auth() {
@@ -206,6 +216,10 @@ class HBM_API {
             $data['is_business'] = $is_business;
         }
 
+        if (isset($params['bank_account_id']) && $params['bank_account_id'] !== '' && $params['bank_account_id'] !== null) {
+            $data['bank_account_id'] = intval($params['bank_account_id']);
+        }
+
         $result = $wpdb->insert("{$wpdb->prefix}hbm_income", $data);
 
         if ($result === false) {
@@ -240,6 +254,10 @@ class HBM_API {
 
         if (!empty($params['end_date'])) {
             $data['end_date'] = sanitize_text_field($params['end_date']);
+        }
+
+        if (array_key_exists('bank_account_id', $params)) {
+            $data['bank_account_id'] = ($params['bank_account_id'] !== null && $params['bank_account_id'] !== '') ? intval($params['bank_account_id']) : null;
         }
 
         $wpdb->update("{$wpdb->prefix}hbm_income", $data, ['id' => $id, 'user_id' => $user_id]);
@@ -1416,6 +1434,45 @@ class HBM_API {
 
         $entries = [];
 
+        // 0. Income linked to this bank account
+        $income_query = "SELECT * FROM {$wpdb->prefix}hbm_income
+             WHERE user_id = %d AND bank_account_id = %d";
+        $income_args = [$user_id, $bank_account_id];
+        $income_items = $wpdb->get_results($wpdb->prepare($income_query, $income_args));
+
+        foreach ($income_items as $inc) {
+            if ($inc->is_recurring) {
+                $start = new DateTime($inc->start_date);
+                $end_dt = $inc->end_date ? new DateTime(min($inc->end_date, $end_date)) : new DateTime($end_date);
+                $current = clone $start;
+                while ($current <= $end_dt) {
+                    $entry_date = $current->format('Y-m-d');
+                    if ($entry_date > $balance_date && $entry_date <= $end_date) {
+                        $entries[] = [
+                            'date' => $entry_date,
+                            'description' => $inc->title,
+                            'type' => 'income',
+                            'type_label' => 'הכנסה',
+                            'amount' => floatval($inc->amount),
+                            'is_charge' => false,
+                        ];
+                    }
+                    $current->modify('+1 month');
+                }
+            } else {
+                if ($inc->start_date > $balance_date && $inc->start_date <= $end_date) {
+                    $entries[] = [
+                        'date' => $inc->start_date,
+                        'description' => $inc->title,
+                        'type' => 'income',
+                        'type_label' => 'הכנסה',
+                        'amount' => floatval($inc->amount),
+                        'is_charge' => false,
+                    ];
+                }
+            }
+        }
+
         // 1. Past transactions affecting this bank account
         $past_exp_query = "SELECT * FROM {$wpdb->prefix}hbm_expenses
              WHERE user_id = %d AND bank_account_id = %d AND start_date <= %s";
@@ -1719,20 +1776,27 @@ class HBM_API {
         $month_start = $month . '-01';
         $month_end = date('Y-m-t', strtotime($month_start));
 
-        // Total business income for this month
-        $income = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}hbm_income
-             WHERE user_id = %d AND is_business = 1
-             AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)",
-            $user_id, $month_end, $month_start
+        // Business income from collections (paid/receipt_sent)
+        $collections = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}hbm_collections
+             WHERE user_id = %d AND status IN ('paid','receipt_sent')
+             AND payment_date >= %s AND payment_date <= %s",
+            $user_id, $month_start, $month_end
         ));
 
         $total_income = 0;
-        foreach ($income as $item) {
+        $collection_items = [];
+        foreach ($collections as $item) {
             $total_income += floatval($item->amount);
+            $collection_items[] = [
+                'client_name' => $item->client_name,
+                'amount' => floatval($item->amount),
+                'payment_date' => $item->payment_date,
+                'status' => $item->status,
+            ];
         }
 
-        // Total business expenses for this month (using same logic as dashboard)
+        // Total business expenses for this month
         $expenses = $wpdb->get_results($wpdb->prepare(
             "SELECT * FROM {$wpdb->prefix}hbm_expenses
              WHERE user_id = %d AND is_business = 1
@@ -1754,6 +1818,7 @@ class HBM_API {
             'total_expenses' => $total_expenses,
             'available_salary' => $available_salary,
             'month' => $month,
+            'collection_items' => $collection_items,
         ]);
     }
 
@@ -1902,5 +1967,124 @@ class HBM_API {
         $end_date = new DateTime($end);
         $interval = $start_date->diff($end_date);
         return ($interval->y * 12) + $interval->m;
+    }
+
+    // =========================================================================
+    // Salary Transfer (business expense + personal income)
+    // =========================================================================
+
+    public static function create_salary_transfer($request) {
+        global $wpdb;
+        $user_id = get_current_user_id();
+
+        $params = $request->get_json_params();
+        if (empty($params)) {
+            $params = $request->get_params();
+        }
+
+        $title = sanitize_text_field($params['title'] ?? 'משכורת');
+        $amount = floatval($params['amount'] ?? 0);
+        $transfer_date = sanitize_text_field($params['transfer_date'] ?? date('Y-m-d'));
+        $bank_account_id = intval($params['bank_account_id'] ?? 0);
+        $biz_bank_account_id = intval($params['biz_bank_account_id'] ?? 0);
+
+        if ($amount <= 0) {
+            return new WP_Error('invalid_amount', 'סכום לא תקין', ['status' => 400]);
+        }
+        if (!$bank_account_id) {
+            return new WP_Error('missing_bank', 'יש לבחור חשבון בנק פרטי', ['status' => 400]);
+        }
+
+        // Create business expense
+        $biz_expense_data = [
+            'user_id' => $user_id,
+            'type' => 'one_time',
+            'title' => $title,
+            'category' => 'salary',
+            'amount' => $amount,
+            'start_date' => $transfer_date,
+            'is_business' => 1,
+        ];
+        if ($biz_bank_account_id) {
+            $biz_expense_data['bank_account_id'] = $biz_bank_account_id;
+        }
+
+        $result1 = $wpdb->insert("{$wpdb->prefix}hbm_expenses", $biz_expense_data);
+        if ($result1 === false) {
+            return new WP_Error('db_error', 'שגיאה ביצירת הוצאת עסק: ' . $wpdb->last_error, ['status' => 500]);
+        }
+        $biz_expense_id = $wpdb->insert_id;
+
+        // Create personal income
+        $personal_income_data = [
+            'user_id' => $user_id,
+            'title' => $title,
+            'amount' => $amount,
+            'source' => 'עסק',
+            'is_recurring' => 0,
+            'start_date' => $transfer_date,
+        ];
+
+        $result2 = $wpdb->insert("{$wpdb->prefix}hbm_income", $personal_income_data);
+        if ($result2 === false) {
+            return new WP_Error('db_error', 'שגיאה ביצירת הכנסה פרטית: ' . $wpdb->last_error, ['status' => 500]);
+        }
+        $personal_income_id = $wpdb->insert_id;
+
+        return rest_ensure_response([
+            'success' => true,
+            'biz_expense_id' => $biz_expense_id,
+            'personal_income_id' => $personal_income_id,
+        ]);
+    }
+
+    // =========================================================================
+    // Bank Balances Projection
+    // =========================================================================
+
+    public static function get_bank_balances($request) {
+        global $wpdb;
+        $user_id = get_current_user_id();
+        $target_date = sanitize_text_field($request->get_param('target_date') ?? date('Y-m-d'));
+        $is_business = $request->get_param('is_business');
+
+        $query = "SELECT * FROM {$wpdb->prefix}hbm_bank_accounts WHERE user_id = %d";
+        $query_args = [$user_id];
+
+        if ($is_business !== null && $is_business !== '') {
+            $query .= " AND is_business = %d";
+            $query_args[] = intval($is_business);
+        }
+
+        $accounts = $wpdb->get_results($wpdb->prepare($query, $query_args));
+        $balances = [];
+
+        foreach ($accounts as $account) {
+            $cf_request = new WP_REST_Request('GET');
+            $cf_request->set_param('bank_account_id', $account->id);
+            $cf_request->set_param('start_date', date('Y-m-d'));
+            $cf_request->set_param('end_date', $target_date);
+
+            $cf_response = self::get_cash_flow($cf_request);
+            $cf_data = $cf_response->get_data();
+
+            $projected_balance = floatval($account->initial_balance);
+            if (!is_wp_error($cf_data) && isset($cf_data['current_balance'])) {
+                $projected_balance = floatval($cf_data['current_balance']);
+            }
+
+            $balances[] = [
+                'id' => intval($account->id),
+                'bank_name' => $account->bank_name,
+                'last_three' => $account->last_three,
+                'is_business' => intval($account->is_business ?? 0),
+                'initial_balance' => floatval($account->initial_balance),
+                'credit_limit' => floatval($account->credit_limit),
+                'projected_balance' => $projected_balance,
+                'target_date' => $target_date,
+            ];
+        }
+
+        return rest_ensure_response($balances);
     }
 }

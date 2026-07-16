@@ -180,6 +180,7 @@
             case 'reserved-payments': loadReservedPayments(); break;
             case 'collections': loadCollections(); break;
             case 'business': loadBusinessPage(); break;
+            case 'biz-dashboard': loadBizDashboard(); break;
         }
     }
 
@@ -189,12 +190,12 @@
         if (navCollections) navCollections.style.display = isSelfEmployed ? '' : 'none';
         var navBusiness = document.getElementById('hbm-nav-business');
         if (navBusiness) navBusiness.style.display = isSelfEmployed ? '' : 'none';
+        var navBizDashboard = document.getElementById('hbm-nav-biz-dashboard');
+        if (navBizDashboard) navBizDashboard.style.display = isSelfEmployed ? '' : 'none';
         var navBizDivider = document.getElementById('hbm-nav-business-divider');
         if (navBizDivider) navBizDivider.style.display = isSelfEmployed ? '' : 'none';
         var bizSettings = document.getElementById('hbm-business-settings');
         if (bizSettings) bizSettings.style.display = isSelfEmployed ? '' : 'none';
-        var bizSummary = document.getElementById('hbm-business-summary');
-        if (bizSummary) bizSummary.style.display = isSelfEmployed ? '' : 'none';
     }
 
     // Month Selector
@@ -560,6 +561,7 @@
             renderExpensesByCategory(data.expenses_by_category);
             renderBudgetStatus(data.budget_status);
         });
+        loadDashboardBankBalances();
     }
 
     function loadDashboard() {
@@ -584,8 +586,7 @@
         });
 
         loadOverdraftWarning();
-        if (userType === 'self_employed') loadBusinessDashboard();
-
+        loadDashboardBankBalances();
         loadDashboardReservedPayments();
 
         setupCashFlowControls();
@@ -802,7 +803,7 @@
             }
 
             var html = '<table class="hbm-table"><thead><tr>' +
-                '<th>שם</th><th>מקור</th><th>סכום</th><th>תאריך התחלה</th><th>תאריך סיום</th><th>סטטוס</th><th>פעולות</th>' +
+                '<th>שם</th><th>מקור</th><th>סכום</th><th>חשבון בנק</th><th>תאריך התחלה</th><th>תאריך סיום</th><th>סטטוס</th><th>פעולות</th>' +
                 '</tr></thead><tbody>';
 
             var today = new Date().toISOString().slice(0, 10);
@@ -819,10 +820,16 @@
                     status = 'פעיל';
                     statusClass = 'hbm-badge-saving';
                 }
+                var bankLabel = '-';
+                if (item.bank_account_id) {
+                    var ba = bankAccounts.find(function (a) { return a.id == item.bank_account_id; });
+                    if (ba) bankLabel = ba.bank_name + ' ***' + ba.last_three;
+                }
                 html += '<tr>' +
                     '<td>' + escapeHtml(item.title) + '</td>' +
                     '<td>' + escapeHtml(item.source || '-') + '</td>' +
                     '<td><strong>' + formatCurrency(item.amount) + '</strong></td>' +
+                    '<td>' + bankLabel + '</td>' +
                     '<td>' + formatDate(item.start_date) + '</td>' +
                     '<td>' + formatDate(item.end_date) + '</td>' +
                     '<td><span class="hbm-badge ' + statusClass + '">' + status + '</span></td>' +
@@ -853,6 +860,8 @@
             '<div class="hbm-form-group"><label>תאריך סיום (אופציונלי)</label>' +
             '<input type="date" name="end_date" value="' + (editData ? editData.end_date || '' : '') + '"></div>' +
             '</div>' +
+            '<div class="hbm-form-group"><label>חשבון בנק (לתזרים מזומנים)</label>' +
+            '<select name="bank_account_id">' + buildBankAccountOptions(editData ? editData.bank_account_id : null) + '</select></div>' +
             '<div class="hbm-form-group"><label><input type="checkbox" name="is_recurring" ' + (editData && editData.is_recurring == 1 ? 'checked' : !editData ? 'checked' : '') + '> הכנסה חוזרת (חודשית)</label></div>' +
             '<div class="hbm-form-actions">' +
             '<button type="submit" class="hbm-btn hbm-btn-primary">' + (isEdit ? 'עדכן' : 'הוסף') + '</button>' +
@@ -873,6 +882,9 @@
             };
             if (form.end_date.value) {
                 payload.end_date = form.end_date.value;
+            }
+            if (form.bank_account_id.value) {
+                payload.bank_account_id = parseInt(form.bank_account_id.value);
             }
 
             var method = isEdit ? 'PUT' : 'POST';
@@ -1711,25 +1723,229 @@
         });
     }
 
+    // ===================== Dashboard Bank Balances =====================
+    function loadDashboardBankBalances() {
+        var container = document.getElementById('hbm-dashboard-bank-balances');
+        if (!container) return;
+
+        var endEl = document.getElementById('hbm-dashboard-end-date');
+        var targetDate = endEl && endEl.value ? endEl.value : getDashboardDateDefaults().end_date;
+
+        apiRequest('bank-balances', 'GET', { target_date: targetDate, is_business: 0 }).then(function (data) {
+            if (!data || !Array.isArray(data) || data.length === 0) {
+                container.innerHTML = '<div class="hbm-empty-state"><p>אין חשבונות בנק להצגה</p></div>';
+                return;
+            }
+            var html = '<table class="hbm-table"><thead><tr>' +
+                '<th>חשבון</th><th>יתרה נוכחית</th><th>יתרה צפויה ב-' + formatDate(targetDate) + '</th><th>מסגרת</th>' +
+                '</tr></thead><tbody>';
+            data.forEach(function (b) {
+                var balClass = b.projected_balance < -b.credit_limit ? ' style="color:#ef4444;font-weight:bold;"' : '';
+                html += '<tr>' +
+                    '<td>' + escapeHtml(b.bank_name) + ' ***' + escapeHtml(b.last_three) + '</td>' +
+                    '<td>' + formatCurrency(b.initial_balance) + '</td>' +
+                    '<td' + balClass + '>' + formatCurrency(b.projected_balance) + '</td>' +
+                    '<td>' + formatCurrency(b.credit_limit) + '</td>' +
+                    '</tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        });
+    }
+
+    // ===================== Business Dashboard Page =====================
+    function loadBizDashboard() {
+        setupBizDashDateControls();
+        loadBizDashData();
+        loadBizDashBankBalances();
+        loadBizDashCashFlowSelector();
+    }
+
+    function setupBizDashDateControls() {
+        var startEl = document.getElementById('hbm-biz-dash-start-date');
+        var endEl = document.getElementById('hbm-biz-dash-end-date');
+        if (!startEl || !endEl) return;
+
+        var defaults = getDashboardDateDefaults();
+        if (!startEl.value) startEl.value = defaults.start_date;
+        if (!endEl.value) endEl.value = defaults.end_date;
+
+        var applyBtn = document.getElementById('hbm-biz-dash-date-apply');
+        if (applyBtn) {
+            applyBtn.addEventListener('click', function () {
+                loadBizDashData();
+                loadBizDashBankBalances();
+            });
+        }
+        var resetBtn = document.getElementById('hbm-biz-dash-date-reset');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', function () {
+                var defs = getDashboardDateDefaults();
+                startEl.value = defs.start_date;
+                endEl.value = defs.end_date;
+                loadBizDashData();
+                loadBizDashBankBalances();
+            });
+        }
+    }
+
+    function loadBizDashData() {
+        apiRequest('business-dashboard', 'GET', { month: currentMonth }).then(function (data) {
+            if (!data || data.error) return;
+            var el;
+            el = document.getElementById('hbm-biz-dash-income');
+            if (el) el.textContent = formatCurrency(data.total_income);
+            el = document.getElementById('hbm-biz-dash-expenses');
+            if (el) el.textContent = formatCurrency(data.total_expenses);
+            el = document.getElementById('hbm-biz-dash-salary');
+            if (el) el.textContent = formatCurrency(data.available_salary);
+
+            var collContainer = document.getElementById('hbm-biz-dash-collections');
+            if (collContainer) {
+                if (!data.collection_items || data.collection_items.length === 0) {
+                    collContainer.innerHTML = '<div class="hbm-empty-state"><p>אין גביות ששולמו בתקופה זו</p></div>';
+                } else {
+                    var html = '<table class="hbm-table"><thead><tr>' +
+                        '<th>לקוח</th><th>סכום</th><th>תאריך תשלום</th><th>סטטוס</th>' +
+                        '</tr></thead><tbody>';
+                    data.collection_items.forEach(function (item) {
+                        var statusLabel = COLLECTION_STATUS_LABELS[item.status] || item.status;
+                        html += '<tr>' +
+                            '<td>' + escapeHtml(item.client_name) + '</td>' +
+                            '<td><strong>' + formatCurrency(item.amount) + '</strong></td>' +
+                            '<td>' + formatDate(item.payment_date) + '</td>' +
+                            '<td>' + statusLabel + '</td>' +
+                            '</tr>';
+                    });
+                    html += '</tbody></table>';
+                    collContainer.innerHTML = html;
+                }
+            }
+        });
+    }
+
+    function loadBizDashBankBalances() {
+        var container = document.getElementById('hbm-biz-dash-bank-balances');
+        if (!container) return;
+
+        var endEl = document.getElementById('hbm-biz-dash-end-date');
+        var targetDate = endEl && endEl.value ? endEl.value : getDashboardDateDefaults().end_date;
+
+        apiRequest('bank-balances', 'GET', { target_date: targetDate, is_business: 1 }).then(function (data) {
+            if (!data || !Array.isArray(data) || data.length === 0) {
+                container.innerHTML = '<div class="hbm-empty-state"><p>אין חשבונות בנק עסקיים להצגה</p></div>';
+                return;
+            }
+            var html = '<table class="hbm-table"><thead><tr>' +
+                '<th>חשבון</th><th>יתרה נוכחית</th><th>יתרה צפויה ב-' + formatDate(targetDate) + '</th><th>מסגרת</th>' +
+                '</tr></thead><tbody>';
+            data.forEach(function (b) {
+                var balClass = b.projected_balance < -b.credit_limit ? ' style="color:#ef4444;font-weight:bold;"' : '';
+                html += '<tr>' +
+                    '<td>' + escapeHtml(b.bank_name) + ' ***' + escapeHtml(b.last_three) + '</td>' +
+                    '<td>' + formatCurrency(b.initial_balance) + '</td>' +
+                    '<td' + balClass + '>' + formatCurrency(b.projected_balance) + '</td>' +
+                    '<td>' + formatCurrency(b.credit_limit) + '</td>' +
+                    '</tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        });
+    }
+
+    function loadBizDashCashFlowSelector() {
+        var cfSelect = document.getElementById('hbm-biz-dash-cashflow-bank');
+        if (!cfSelect) return;
+        cfSelect.innerHTML = buildBizBankAccountOptions();
+        var newSelect = cfSelect.cloneNode(true);
+        cfSelect.parentNode.replaceChild(newSelect, cfSelect);
+        newSelect.innerHTML = buildBizBankAccountOptions();
+        newSelect.addEventListener('change', function () {
+            if (this.value) {
+                loadBizDashCashFlow(this.value);
+            } else {
+                var table = document.getElementById('hbm-biz-dash-cashflow-table');
+                if (table) table.innerHTML = '<div class="hbm-empty-state"><p>בחר חשבון בנק עסקי לצפייה בתזרים</p></div>';
+            }
+        });
+    }
+
+    function loadBizDashCashFlow(bankAccountId) {
+        var container = document.getElementById('hbm-biz-dash-cashflow-table');
+        if (!container) return;
+        container.innerHTML = '<div class="hbm-empty-state"><p>טוען תזרים...</p></div>';
+
+        apiRequest('cash-flow', 'GET', { bank_account_id: bankAccountId, months_ahead: 3, is_business: 1 }).then(function (data) {
+            if (!data || data.error || !Array.isArray(data.entries)) {
+                container.innerHTML = '<div class="hbm-empty-state"><p>אין נתוני תזרים</p></div>';
+                return;
+            }
+            var html = '<table class="hbm-table"><thead><tr>' +
+                '<th>תאריך</th><th>תיאור</th><th>סוג</th><th>סכום</th><th>יתרה</th>' +
+                '</tr></thead><tbody>';
+            data.entries.forEach(function (entry) {
+                var rowClass = entry.is_charge ? ' class="hbm-cashflow-charge-row"' : '';
+                html += '<tr' + rowClass + '>' +
+                    '<td>' + formatDate(entry.date) + '</td>' +
+                    '<td>' + escapeHtml(entry.description) + '</td>' +
+                    '<td>' + escapeHtml(entry.type_label || entry.type || '-') + '</td>' +
+                    '<td><strong>' + formatCurrency(entry.amount) + '</strong></td>' +
+                    '<td>' + formatCurrency(entry.running_balance) + '</td>' +
+                    '</tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        });
+    }
+
+    // ===================== Salary Transfer =====================
+    function showSalaryForm() {
+        var html = '<form id="hbm-salary-form">' +
+            '<div class="hbm-form-group"><label>כותרת</label>' +
+            '<input type="text" name="title" value="משכורת" required></div>' +
+            '<div class="hbm-form-group"><label>סכום</label>' +
+            '<input type="number" step="0.01" name="amount" required></div>' +
+            '<div class="hbm-form-group"><label>תאריך העברה</label>' +
+            '<input type="date" name="transfer_date" value="' + new Date().toISOString().slice(0, 10) + '" required></div>' +
+            '<div class="hbm-form-group"><label>חשבון בנק פרטי (יעד)</label>' +
+            '<select name="bank_account_id" required>' + buildBankAccountOptions() + '</select></div>' +
+            '<div class="hbm-form-group"><label>חשבון בנק עסקי (מקור)</label>' +
+            '<select name="biz_bank_account_id">' + buildBizBankAccountOptions() + '</select></div>' +
+            '<div class="hbm-form-actions">' +
+            '<button type="submit" class="hbm-btn hbm-btn-primary">העבר משכורת</button>' +
+            '<button type="button" class="hbm-btn hbm-btn-ghost" onclick="hbmApp.closeModal()">ביטול</button>' +
+            '</div></form>';
+
+        openModal('העברת משכורת', html);
+
+        document.getElementById('hbm-salary-form').addEventListener('submit', function (e) {
+            e.preventDefault();
+            var form = e.target;
+            var payload = {
+                title: form.title.value,
+                amount: parseFloat(form.amount.value),
+                transfer_date: form.transfer_date.value,
+                bank_account_id: parseInt(form.bank_account_id.value),
+                biz_bank_account_id: form.biz_bank_account_id.value ? parseInt(form.biz_bank_account_id.value) : 0,
+            };
+            apiRequest('salary-transfer', 'POST', payload).then(function (response) {
+                if (response && response.success) {
+                    closeModal();
+                    alert('המשכורת הועברה בהצלחה!');
+                    loadBusinessPage();
+                } else {
+                    alert('שגיאה בהעברת משכורת: ' + (response && response.message ? response.message : 'שגיאה לא ידועה'));
+                }
+            });
+        });
+    }
+
     // ===================== Business =====================
     function loadBusinessPage() {
         loadBusinessDashboardPage();
         loadBusinessIncome();
         loadBusinessExpenses();
         loadBusinessCashFlowSelector();
-    }
-
-    function loadBusinessDashboard() {
-        apiRequest('business-dashboard', 'GET', { month: currentMonth }).then(function (data) {
-            if (!data || data.error) return;
-            var el;
-            el = document.getElementById('hbm-biz-income');
-            if (el) el.textContent = formatCurrency(data.total_income);
-            el = document.getElementById('hbm-biz-expenses');
-            if (el) el.textContent = formatCurrency(data.total_expenses);
-            el = document.getElementById('hbm-biz-salary');
-            if (el) el.textContent = formatCurrency(data.available_salary);
-        });
     }
 
     function loadBusinessDashboardPage() {
@@ -1746,25 +1962,28 @@
     }
 
     function loadBusinessIncome() {
-        apiRequest('income', 'GET', { month: currentMonth, is_business: 1 }).then(function (data) {
+        apiRequest('collections', 'GET').then(function (data) {
             var container = document.getElementById('hbm-biz-income-list');
             if (!container) return;
-            if (!data || data.length === 0) {
-                container.innerHTML = '<div class="hbm-empty-state"><p>אין הכנסות עסקיות</p></div>';
+            if (!data || !Array.isArray(data) || data.length === 0) {
+                container.innerHTML = '<div class="hbm-empty-state"><p>אין רשומות גביה</p></div>';
+                return;
+            }
+            var paidData = data.filter(function (item) { return item.status === 'paid' || item.status === 'receipt_sent'; });
+            if (paidData.length === 0) {
+                container.innerHTML = '<div class="hbm-empty-state"><p>אין גביות ששולמו</p></div>';
                 return;
             }
             var html = '<table class="hbm-table"><thead><tr>' +
-                '<th>שם</th><th>מקור</th><th>סכום</th><th>תאריך התחלה</th><th>תאריך סיום</th><th>פעולות</th>' +
+                '<th>לקוח</th><th>סכום</th><th>תאריך תשלום</th><th>סטטוס</th>' +
                 '</tr></thead><tbody>';
-            data.forEach(function (item) {
+            paidData.forEach(function (item) {
+                var statusLabel = COLLECTION_STATUS_LABELS[item.status] || item.status;
                 html += '<tr>' +
-                    '<td>' + escapeHtml(item.title) + '</td>' +
-                    '<td>' + escapeHtml(item.source || '-') + '</td>' +
+                    '<td>' + escapeHtml(item.client_name) + '</td>' +
                     '<td><strong>' + formatCurrency(item.amount) + '</strong></td>' +
-                    '<td>' + formatDate(item.start_date) + '</td>' +
-                    '<td>' + formatDate(item.end_date) + '</td>' +
-                    '<td><button class="hbm-btn hbm-btn-ghost hbm-btn-sm" onclick="hbmApp.editBusinessIncome(' + item.id + ')">✏️</button> ' +
-                    '<button class="hbm-btn hbm-btn-danger hbm-btn-sm" onclick="hbmApp.deleteIncome(' + item.id + ')">🗑️</button></td>' +
+                    '<td>' + formatDate(item.payment_date) + '</td>' +
+                    '<td>' + statusLabel + '</td>' +
                     '</tr>';
             });
             html += '</tbody></table>';
@@ -2230,7 +2449,7 @@
     window.hbmApp = {
         closeModal: closeModal,
         editIncome: function (id) {
-            apiRequest('income', 'GET', { month: currentMonth }).then(function (data) {
+            apiRequest('income', 'GET', {}).then(function (data) {
                 var item = data.find(function (i) { return i.id == id; });
                 if (item) showIncomeForm(item);
             });
@@ -2331,22 +2550,7 @@
         },
         deleteAllocation: deleteAllocation,
         // Business
-        showBusinessIncomeForm: function (id) {
-            if (id) {
-                apiRequest('income', 'GET', { month: currentMonth, is_business: 1 }).then(function (data) {
-                    var item = data.find(function (i) { return i.id == id; });
-                    if (item) showBusinessIncomeForm(item);
-                });
-            } else {
-                showBusinessIncomeForm();
-            }
-        },
-        editBusinessIncome: function (id) {
-            apiRequest('income', 'GET', { month: currentMonth, is_business: 1 }).then(function (data) {
-                var item = data.find(function (i) { return i.id == id; });
-                if (item) showBusinessIncomeForm(item);
-            });
-        },
+        showSalaryForm: showSalaryForm,
         showBusinessExpenseForm: function (id) {
             if (id) {
                 apiRequest('expenses', 'GET', { month: currentMonth, is_business: 1 }).then(function (data) {

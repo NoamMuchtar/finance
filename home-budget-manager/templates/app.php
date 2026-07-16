@@ -15,16 +15,17 @@ if (!defined('ABSPATH')) {
         </div>
 
         <ul class="hbm-sidebar-nav">
-            <li><a href="#" data-page="dashboard" class="hbm-sidebar-nav-item active"><span class="nav-icon">📊</span><span class="nav-label">דאשבורד</span></a></li>
+            <li><a href="#" data-page="dashboard" class="hbm-sidebar-nav-item active"><span class="nav-icon">📊</span><span class="nav-label">דאשבורד פרטי</span></a></li>
             <li><a href="#" data-page="income" class="hbm-sidebar-nav-item"><span class="nav-icon">💼</span><span class="nav-label">הכנסות</span></a></li>
             <li><a href="#" data-page="expenses" class="hbm-sidebar-nav-item"><span class="nav-icon">💳</span><span class="nav-label">הוצאות</span></a></li>
             <li><div class="hbm-sidebar-nav-divider"></div></li>
             <li><a href="#" data-page="reserved-payments" class="hbm-sidebar-nav-item"><span class="nav-icon">📌</span><span class="nav-label">שמירת מסגרת</span></a></li>
             <li><a href="#" data-page="allocations" class="hbm-sidebar-nav-item"><span class="nav-icon">📐</span><span class="nav-label">הקצאת תקציב</span></a></li>
-            <li><div class="hbm-sidebar-nav-divider"></div></li>
+            <li><div class="hbm-sidebar-nav-divider" id="hbm-nav-business-divider" style="display:none;"></div></li>
+            <li id="hbm-nav-biz-dashboard" style="display:none;"><a href="#" data-page="biz-dashboard" class="hbm-sidebar-nav-item"><span class="nav-icon">📈</span><span class="nav-label">דאשבורד עסקי</span></a></li>
             <li id="hbm-nav-collections" style="display:none;"><a href="#" data-page="collections" class="hbm-sidebar-nav-item"><span class="nav-icon">📋</span><span class="nav-label">ניהול גביה</span></a></li>
             <li id="hbm-nav-business" style="display:none;"><a href="#" data-page="business" class="hbm-sidebar-nav-item"><span class="nav-icon">🏢</span><span class="nav-label">ניהול עסק</span></a></li>
-            <li><div class="hbm-sidebar-nav-divider" id="hbm-nav-business-divider" style="display:none;"></div></li>
+            <li><div class="hbm-sidebar-nav-divider"></div></li>
             <li><a href="#" data-page="settings" class="hbm-sidebar-nav-item"><span class="nav-icon">⚙️</span><span class="nav-label">הגדרות</span></a></li>
         </ul>
 
@@ -93,28 +94,9 @@ if (!defined('ABSPATH')) {
                 </div>
             </div>
 
-            <div id="hbm-business-summary" style="display:none;">
-                <h3 style="margin:20px 0 12px;">סיכום עסק</h3>
-                <div class="hbm-dashboard-cards">
-                    <div class="hbm-card hbm-card-income">
-                        <div class="hbm-card-content">
-                            <h3>הכנסות עסק</h3>
-                            <p class="hbm-amount" id="hbm-biz-income">₪0</p>
-                        </div>
-                    </div>
-                    <div class="hbm-card hbm-card-expenses">
-                        <div class="hbm-card-content">
-                            <h3>הוצאות עסק</h3>
-                            <p class="hbm-amount" id="hbm-biz-expenses">₪0</p>
-                        </div>
-                    </div>
-                    <div class="hbm-card hbm-card-remaining">
-                        <div class="hbm-card-content">
-                            <h3>משכורת זמינה</h3>
-                            <p class="hbm-amount" id="hbm-biz-salary">₪0</p>
-                        </div>
-                    </div>
-                </div>
+            <div class="hbm-panel" style="margin-top:20px;">
+                <h3>יתרות עו"ש צפויות</h3>
+                <div id="hbm-dashboard-bank-balances" class="hbm-table-container"></div>
             </div>
 
             <div class="hbm-dashboard-grid">
@@ -254,8 +236,7 @@ if (!defined('ABSPATH')) {
 
             <div class="hbm-panel" style="margin-top:20px;">
                 <div class="hbm-panel-header">
-                    <h3>הכנסות עסקיות</h3>
-                    <button class="hbm-btn hbm-btn-primary" onclick="hbmApp.showBusinessIncomeForm()">+ הוסף הכנסה עסקית</button>
+                    <h3>הכנסות עסקיות (מגביה)</h3>
                 </div>
                 <div id="hbm-biz-income-list" class="hbm-table-container"></div>
             </div>
@@ -263,7 +244,10 @@ if (!defined('ABSPATH')) {
             <div class="hbm-panel" style="margin-top:20px;">
                 <div class="hbm-panel-header">
                     <h3>הוצאות עסקיות</h3>
-                    <button class="hbm-btn hbm-btn-primary" onclick="hbmApp.showBusinessExpenseForm()">+ הוסף הוצאה עסקית</button>
+                    <div>
+                        <button class="hbm-btn hbm-btn-primary" onclick="hbmApp.showSalaryForm()">💰 העברת משכורת</button>
+                        <button class="hbm-btn hbm-btn-primary" onclick="hbmApp.showBusinessExpenseForm()">+ הוסף הוצאה עסקית</button>
+                    </div>
                 </div>
                 <div id="hbm-biz-expenses-list" class="hbm-table-container"></div>
             </div>
@@ -276,6 +260,61 @@ if (!defined('ABSPATH')) {
                     </select>
                 </div>
                 <div id="hbm-biz-cashflow-table" class="hbm-table-container"></div>
+            </div>
+        </section>
+
+        <!-- Business Dashboard -->
+        <section id="hbm-page-biz-dashboard" class="hbm-page">
+            <div class="hbm-page-header"><h2>דאשבורד עסקי</h2></div>
+
+            <div class="hbm-dashboard-date-controls">
+                <div class="hbm-cashflow-dates">
+                    <label>מתאריך: <input type="date" id="hbm-biz-dash-start-date" class="hbm-input-sm"></label>
+                    <label>עד תאריך: <input type="date" id="hbm-biz-dash-end-date" class="hbm-input-sm"></label>
+                    <button class="hbm-btn hbm-btn-sm" id="hbm-biz-dash-date-apply">הצג</button>
+                    <button class="hbm-btn hbm-btn-sm hbm-btn-outline" id="hbm-biz-dash-date-reset">איפוס</button>
+                </div>
+            </div>
+
+            <div class="hbm-dashboard-cards">
+                <div class="hbm-card hbm-card-income">
+                    <div class="hbm-card-content">
+                        <h3>הכנסות (גביה)</h3>
+                        <p class="hbm-amount" id="hbm-biz-dash-income">₪0</p>
+                    </div>
+                </div>
+                <div class="hbm-card hbm-card-expenses">
+                    <div class="hbm-card-content">
+                        <h3>הוצאות עסק</h3>
+                        <p class="hbm-amount" id="hbm-biz-dash-expenses">₪0</p>
+                    </div>
+                </div>
+                <div class="hbm-card hbm-card-remaining">
+                    <div class="hbm-card-content">
+                        <h3>משכורת זמינה</h3>
+                        <p class="hbm-amount" id="hbm-biz-dash-salary">₪0</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="hbm-panel" style="margin-top:20px;">
+                <h3>גביות ששולמו</h3>
+                <div id="hbm-biz-dash-collections" class="hbm-table-container"></div>
+            </div>
+
+            <div class="hbm-panel" style="margin-top:20px;">
+                <h3>יתרות עו"ש עסקי צפויות</h3>
+                <div id="hbm-biz-dash-bank-balances" class="hbm-table-container"></div>
+            </div>
+
+            <div class="hbm-panel" style="margin-top:20px;">
+                <div class="hbm-panel-header">
+                    <h3>תזרים מזומנים - עסק</h3>
+                    <select id="hbm-biz-dash-cashflow-bank" class="hbm-select-inline">
+                        <option value="">בחר חשבון בנק עסקי</option>
+                    </select>
+                </div>
+                <div id="hbm-biz-dash-cashflow-table" class="hbm-table-container"></div>
             </div>
         </section>
 
