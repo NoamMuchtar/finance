@@ -832,7 +832,7 @@
 
     // ===================== Income =====================
     function loadIncome() {
-        apiRequest('income', 'GET', {}).then(function (data) {
+        apiRequest('income', 'GET', { is_business: 0 }).then(function (data) {
             console.log('HBM loadIncome response:', data);
             var container = document.getElementById('hbm-income-list');
             if (!container) return;
@@ -946,7 +946,7 @@
 
     // ===================== Expenses =====================
     function loadExpenses() {
-        var params = { month: currentMonth };
+        var params = { month: currentMonth, is_business: 0 };
         if (currentExpenseFilter !== 'all' && currentExpenseFilter !== 'standing_order') {
             params.type = currentExpenseFilter;
         }
@@ -2441,7 +2441,7 @@
     window.hbmApp = {
         closeModal: closeModal,
         editIncome: function (id) {
-            apiRequest('income', 'GET', {}).then(function (data) {
+            apiRequest('income', 'GET', { is_business: 0 }).then(function (data) {
                 var item = data.find(function (i) { return i.id == id; });
                 if (item) showIncomeForm(item);
             });
@@ -2451,7 +2451,7 @@
             apiRequest('income/' + id, 'DELETE').then(function () { loadIncome(); loadDashboard(); });
         },
         editExpense: function (id) {
-            apiRequest('expenses', 'GET', { month: currentMonth }).then(function (data) {
+            apiRequest('expenses', 'GET', { month: currentMonth, is_business: 0 }).then(function (data) {
                 var item = data.find(function (i) { return i.id == id; });
                 if (item) showExpenseForm(item);
             });

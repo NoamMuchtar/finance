@@ -690,7 +690,8 @@ class HBM_API {
 
         $income = $wpdb->get_results($wpdb->prepare(
             "SELECT * FROM {$wpdb->prefix}hbm_income
-             WHERE user_id = %d AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)",
+             WHERE user_id = %d AND (is_business = 0 OR is_business IS NULL)
+             AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)",
             $user_id, $month_end, $month_start
         ));
 
@@ -701,7 +702,8 @@ class HBM_API {
 
         $expenses = $wpdb->get_results($wpdb->prepare(
             "SELECT * FROM {$wpdb->prefix}hbm_expenses
-             WHERE user_id = %d AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)",
+             WHERE user_id = %d AND (is_business = 0 OR is_business IS NULL)
+             AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)",
             $user_id, $month_end, $month_start
         ));
 
@@ -2027,6 +2029,9 @@ class HBM_API {
             'is_recurring' => 0,
             'start_date' => $transfer_date,
         ];
+        if ($bank_account_id) {
+            $personal_income_data['bank_account_id'] = $bank_account_id;
+        }
 
         $result2 = $wpdb->insert("{$wpdb->prefix}hbm_income", $personal_income_data);
         if ($result2 === false) {
