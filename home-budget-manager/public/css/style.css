@@ -786,6 +786,7 @@
     border-radius: var(--hbm-radius);
     border: 1px solid var(--hbm-border);
     background: var(--hbm-card-bg);
+    box-shadow: var(--hbm-card-shadow);
 }
 
 .hbm-table {
@@ -797,21 +798,28 @@
 .hbm-table th {
     position: sticky;
     top: 0;
-    background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+    background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
     padding: 14px 16px;
     text-align: right;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
-    color: var(--hbm-text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-    border-bottom: 2px solid var(--hbm-border);
+    color: #ffffff;
+    letter-spacing: 0.4px;
+    border-bottom: none;
     z-index: 1;
     white-space: nowrap;
 }
 
+.hbm-table th:first-child {
+    border-radius: 0 var(--hbm-radius-sm) 0 0;
+}
+
+.hbm-table th:last-child {
+    border-radius: var(--hbm-radius-sm) 0 0 0;
+}
+
 .hbm-table td {
-    padding: 14px 16px;
+    padding: 12px 16px;
     border-bottom: 1px solid var(--hbm-border-light);
     color: var(--hbm-text-primary);
     vertical-align: middle;
@@ -821,22 +829,47 @@
     border-bottom: none;
 }
 
+.hbm-table-striped tbody tr:nth-child(odd) {
+    background: #ffffff;
+}
+
+.hbm-table-striped tbody tr:nth-child(even) {
+    background: rgba(241, 245, 249, 0.6);
+}
+
 .hbm-table tbody tr:nth-child(even) {
     background: rgba(241, 245, 249, 0.4);
 }
 
 .hbm-table tbody tr {
-    transition: background var(--hbm-transition);
+    transition: all 0.15s ease;
 }
 
 .hbm-table tbody tr:hover {
     background: var(--hbm-primary-light);
+    box-shadow: inset 3px 0 0 var(--hbm-primary);
 }
 
 .hbm-table .hbm-table-actions {
     display: flex;
     gap: 6px;
     align-items: center;
+}
+
+.hbm-table .hbm-amount-cell {
+    font-weight: 700;
+    color: var(--hbm-text-primary);
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+.hbm-table .hbm-row-cc {
+    background: var(--hbm-info-light) !important;
+    border-right: 3px solid var(--hbm-info);
+}
+
+.hbm-table .hbm-row-cc:hover {
+    background: rgba(139, 92, 246, 0.12) !important;
 }
 
 /* ============================================
@@ -895,8 +928,25 @@
 }
 
 .hbm-badge-info {
-    background: #dbeafe;
-    color: #1d4ed8;
+    background: #ede9fe;
+    color: #6d28d9;
+}
+
+.hbm-badge-info-sm {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: var(--hbm-radius-full);
+    font-size: 10px;
+    font-weight: 600;
+    background: #e0e7ff;
+    color: #4338ca;
+    margin-right: 6px;
+}
+
+.hbm-badge-default {
+    background: #f1f5f9;
+    color: var(--hbm-text-secondary);
 }
 
 .hbm-badge-neutral {

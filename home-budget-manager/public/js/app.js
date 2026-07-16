@@ -705,24 +705,30 @@
             container.innerHTML = '<div class="hbm-empty-state"><p>אין הוצאות בתקופה זו</p></div>';
             return;
         }
-        var html = '<table class="hbm-table"><thead><tr>' +
-            '<th>תיאור</th><th>סוג</th><th>קטגוריה</th><th>סכום</th>' +
+        var html = '<table class="hbm-table hbm-table-striped"><thead><tr>' +
+            '<th>תיאור</th><th>סוג</th><th>קטגוריה</th><th>יום הורדה</th><th>סכום</th>' +
             '</tr></thead><tbody>';
         details.forEach(function (item) {
-            var typeLabel;
+            var typeLabel, rowClass = '';
             if (item.type === 'credit_card') {
-                typeLabel = 'כרטיס אשראי (יום ' + item.billing_day + ')';
+                typeLabel = '<span class="hbm-badge hbm-badge-info">כרטיס אשראי</span>';
+                rowClass = ' class="hbm-row-cc"';
             } else if (item.type === 'standing_order') {
-                typeLabel = 'הוראת קבע';
+                typeLabel = '<span class="hbm-badge hbm-badge-fixed">הוראת קבע</span>';
             } else {
-                typeLabel = TYPE_LABELS[item.type] || item.type || '-';
+                var badgeClass = item.type === 'loan' ? 'hbm-badge-loan' :
+                    item.type === 'saving' ? 'hbm-badge-saving' :
+                    item.type === 'fixed' ? 'hbm-badge-fixed' : 'hbm-badge-default';
+                typeLabel = '<span class="hbm-badge ' + badgeClass + '">' + (TYPE_LABELS[item.type] || item.type || '-') + '</span>';
             }
             var catLabel = CATEGORIES[item.category] || item.category || '-';
-            html += '<tr>' +
-                '<td>' + escapeHtml(item.title) + '</td>' +
+            var deductionDay = item.deduction_day ? item.deduction_day + ' לחודש' : '-';
+            html += '<tr' + rowClass + '>' +
+                '<td><strong>' + escapeHtml(item.title) + '</strong></td>' +
                 '<td>' + typeLabel + '</td>' +
                 '<td>' + catLabel + '</td>' +
-                '<td><strong>' + formatCurrency(item.amount) + '</strong></td>' +
+                '<td>' + deductionDay + '</td>' +
+                '<td class="hbm-amount-cell">' + formatCurrency(item.amount) + '</td>' +
                 '</tr>';
         });
         html += '</tbody></table>';
@@ -736,17 +742,18 @@
             container.innerHTML = '<div class="hbm-empty-state"><p>אין עסקאות אשראי</p></div>';
             return;
         }
-        var html = '<table class="hbm-table"><thead><tr>' +
-            '<th>תיאור</th><th>כרטיס</th><th>קטגוריה</th><th>סכום</th><th>תאריך</th>' +
+        var html = '<table class="hbm-table hbm-table-striped"><thead><tr>' +
+            '<th>תיאור</th><th>משתמש</th><th>כרטיס</th><th>קטגוריה</th><th>סכום</th><th>תאריך</th>' +
             '</tr></thead><tbody>';
         transactions.forEach(function (item) {
             var catLabel = CATEGORIES[item.category] || item.category || '-';
-            var installLabel = item.total_installments ? ' (' + item.total_installments + ' תשלומים)' : '';
+            var installLabel = item.total_installments ? ' <span class="hbm-badge hbm-badge-info-sm">' + item.total_installments + ' תשלומים</span>' : '';
             html += '<tr>' +
-                '<td>' + escapeHtml(item.title) + installLabel + '</td>' +
+                '<td><strong>' + escapeHtml(item.title) + '</strong>' + installLabel + '</td>' +
+                '<td>' + escapeHtml(item.user_name || '-') + '</td>' +
                 '<td>' + escapeHtml(item.card_name) + '</td>' +
                 '<td>' + catLabel + '</td>' +
-                '<td><strong>' + formatCurrency(item.amount) + '</strong></td>' +
+                '<td class="hbm-amount-cell">' + formatCurrency(item.amount) + '</td>' +
                 '<td>' + formatDate(item.start_date) + '</td>' +
                 '</tr>';
         });

@@ -825,16 +825,24 @@ class HBM_API {
                         'type' => 'credit_card',
                         'title' => $card->card_name . ' ***' . $card->last_four,
                         'billing_day' => intval($card->billing_day),
+                        'deduction_day' => intval($card->billing_day),
                         'amount' => 0,
                     ];
                 }
                 $cc_groups[$cid]['amount'] += $monthly_amount;
             } else {
+                $deduction_day = null;
+                if ($expense->type === 'loan' && $expense->loan_payment_day) {
+                    $deduction_day = intval($expense->loan_payment_day);
+                } elseif ($expense->start_date) {
+                    $deduction_day = intval(date('d', strtotime($expense->start_date)));
+                }
                 $non_cc_details[] = [
                     'type' => $expense->type,
                     'title' => $expense->title,
                     'amount' => $monthly_amount,
                     'category' => $expense->category,
+                    'deduction_day' => $deduction_day,
                 ];
             }
         }
@@ -845,6 +853,7 @@ class HBM_API {
                 'title' => $order->title,
                 'amount' => floatval($order->amount),
                 'category' => $order->category ?? '',
+                'deduction_day' => intval($order->day_of_month),
             ];
         }
 
@@ -852,8 +861,10 @@ class HBM_API {
 
         // Recent 10 credit card transactions (personal)
         $recent_cc = $wpdb->get_results($wpdb->prepare(
-            "SELECT e.*, c.card_name, c.last_four FROM {$wpdb->prefix}hbm_expenses e
+            "SELECT e.*, c.card_name, c.last_four, u.display_name as user_name
+             FROM {$wpdb->prefix}hbm_expenses e
              LEFT JOIN {$wpdb->prefix}hbm_credit_cards c ON e.credit_card_id = c.id
+             LEFT JOIN {$wpdb->prefix}users u ON e.user_id = u.ID
              WHERE e.user_id = %d AND e.credit_card_id IS NOT NULL
              AND (e.is_business = 0 OR e.is_business IS NULL)
              ORDER BY e.created_at DESC LIMIT 10",
@@ -870,6 +881,7 @@ class HBM_API {
                 'type' => $r->type,
                 'start_date' => $r->start_date,
                 'total_installments' => $r->total_installments ? intval($r->total_installments) : null,
+                'user_name' => $r->user_name ?? '',
             ];
         }
 
@@ -1984,16 +1996,24 @@ class HBM_API {
                         'type' => 'credit_card',
                         'title' => $card->card_name . ' ***' . $card->last_four,
                         'billing_day' => intval($card->billing_day),
+                        'deduction_day' => intval($card->billing_day),
                         'amount' => 0,
                     ];
                 }
                 $biz_cc_groups[$cid]['amount'] += $monthly_amount;
             } else {
+                $deduction_day = null;
+                if ($expense->type === 'loan' && $expense->loan_payment_day) {
+                    $deduction_day = intval($expense->loan_payment_day);
+                } elseif ($expense->start_date) {
+                    $deduction_day = intval(date('d', strtotime($expense->start_date)));
+                }
                 $biz_non_cc_details[] = [
                     'type' => $expense->type,
                     'title' => $expense->title,
                     'amount' => $monthly_amount,
                     'category' => $expense->category,
+                    'deduction_day' => $deduction_day,
                 ];
             }
         }
@@ -2001,8 +2021,10 @@ class HBM_API {
         $biz_expense_details = array_merge(array_values($biz_cc_groups), $biz_non_cc_details);
 
         $biz_recent_cc = $wpdb->get_results($wpdb->prepare(
-            "SELECT e.*, c.card_name, c.last_four FROM {$wpdb->prefix}hbm_expenses e
+            "SELECT e.*, c.card_name, c.last_four, u.display_name as user_name
+             FROM {$wpdb->prefix}hbm_expenses e
              LEFT JOIN {$wpdb->prefix}hbm_credit_cards c ON e.credit_card_id = c.id
+             LEFT JOIN {$wpdb->prefix}users u ON e.user_id = u.ID
              WHERE e.user_id = %d AND e.credit_card_id IS NOT NULL AND e.is_business = 1
              ORDER BY e.created_at DESC LIMIT 10",
             $user_id
@@ -2018,6 +2040,7 @@ class HBM_API {
                 'type' => $r->type,
                 'start_date' => $r->start_date,
                 'total_installments' => $r->total_installments ? intval($r->total_installments) : null,
+                'user_name' => $r->user_name ?? '',
             ];
         }
 
