@@ -149,15 +149,18 @@ class HBM_API {
     public static function get_income($request) {
         global $wpdb;
         $user_id = get_current_user_id();
-        $month = sanitize_text_field($request->get_param('month') ?? date('Y-m'));
-        $month_start = $month . '-01';
-        $month_end = date('Y-m-t', strtotime($month_start));
 
-        $query = "SELECT * FROM {$wpdb->prefix}hbm_income
-             WHERE user_id = %d
-             AND start_date <= %s
-             AND (end_date IS NULL OR end_date >= %s)";
-        $query_args = [$user_id, $month_end, $month_start];
+        $query = "SELECT * FROM {$wpdb->prefix}hbm_income WHERE user_id = %d";
+        $query_args = [$user_id];
+
+        $month = sanitize_text_field($request->get_param('month') ?? '');
+        if ($month) {
+            $month_start = $month . '-01';
+            $month_end = date('Y-m-t', strtotime($month_start));
+            $query .= " AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)";
+            $query_args[] = $month_end;
+            $query_args[] = $month_start;
+        }
 
         $is_business = $request->get_param('is_business');
         if ($is_business !== null && $is_business !== '') {
@@ -165,7 +168,7 @@ class HBM_API {
             $query_args[] = intval($is_business);
         }
 
-        $query .= " ORDER BY created_at DESC";
+        $query .= " ORDER BY start_date DESC, created_at DESC";
 
         $results = $wpdb->get_results($wpdb->prepare($query, $query_args));
 

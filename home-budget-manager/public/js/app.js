@@ -792,8 +792,8 @@
 
     // ===================== Income =====================
     function loadIncome() {
-        apiRequest('income', 'GET', { month: currentMonth }).then(function (data) {
-            console.log('HBM loadIncome response:', data, 'month:', currentMonth);
+        apiRequest('income', 'GET', {}).then(function (data) {
+            console.log('HBM loadIncome response:', data);
             var container = document.getElementById('hbm-income-list');
             if (!container) return;
             if (!data || !Array.isArray(data) || data.length === 0) {
@@ -802,16 +802,30 @@
             }
 
             var html = '<table class="hbm-table"><thead><tr>' +
-                '<th>שם</th><th>מקור</th><th>סכום</th><th>תאריך התחלה</th><th>תאריך סיום</th><th>פעולות</th>' +
+                '<th>שם</th><th>מקור</th><th>סכום</th><th>תאריך התחלה</th><th>תאריך סיום</th><th>סטטוס</th><th>פעולות</th>' +
                 '</tr></thead><tbody>';
 
+            var today = new Date().toISOString().slice(0, 10);
             data.forEach(function (item) {
+                var status = '';
+                var statusClass = '';
+                if (item.start_date > today) {
+                    status = 'עתידי';
+                    statusClass = 'hbm-badge-installment';
+                } else if (item.end_date && item.end_date < today) {
+                    status = 'הסתיים';
+                    statusClass = 'hbm-badge-loan';
+                } else {
+                    status = 'פעיל';
+                    statusClass = 'hbm-badge-saving';
+                }
                 html += '<tr>' +
                     '<td>' + escapeHtml(item.title) + '</td>' +
                     '<td>' + escapeHtml(item.source || '-') + '</td>' +
                     '<td><strong>' + formatCurrency(item.amount) + '</strong></td>' +
                     '<td>' + formatDate(item.start_date) + '</td>' +
                     '<td>' + formatDate(item.end_date) + '</td>' +
+                    '<td><span class="hbm-badge ' + statusClass + '">' + status + '</span></td>' +
                     '<td><button class="hbm-btn hbm-btn-ghost hbm-btn-sm" onclick="hbmApp.editIncome(' + item.id + ')">✏️</button> ' +
                     '<button class="hbm-btn hbm-btn-danger hbm-btn-sm" onclick="hbmApp.deleteIncome(' + item.id + ')">🗑️</button></td>' +
                     '</tr>';
