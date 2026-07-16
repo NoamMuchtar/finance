@@ -320,9 +320,29 @@ class HBM_API {
             "SELECT * FROM {$wpdb->prefix}hbm_expenses $where ORDER BY created_at DESC"
         );
 
+        $credit_card_ids = array_unique(array_filter(array_map(function ($e) {
+            return $e->credit_card_id ?? null;
+        }, $results)));
+        $card_billing_days = [];
+        if (!empty($credit_card_ids)) {
+            $placeholders = implode(',', array_fill(0, count($credit_card_ids), '%d'));
+            $cards = $wpdb->get_results($wpdb->prepare(
+                "SELECT id, billing_day FROM {$wpdb->prefix}hbm_credit_cards WHERE id IN ($placeholders)",
+                ...$credit_card_ids
+            ));
+            foreach ($cards as $c) {
+                $card_billing_days[$c->id] = intval($c->billing_day);
+            }
+        }
+
+        $today_day = intval(date('d'));
         foreach ($results as &$expense) {
             if ($expense->type === 'installment' && $expense->remaining_installments !== null) {
                 $months_passed = self::months_between($expense->start_date, $month_start);
+                $billing_day = isset($card_billing_days[$expense->credit_card_id]) ? $card_billing_days[$expense->credit_card_id] : null;
+                if ($billing_day && $today_day > $billing_day) {
+                    $months_passed++;
+                }
                 $remaining = max(0, $expense->total_installments - $months_passed);
                 $expense->current_remaining = $remaining;
                 $expense->is_active = $remaining > 0;
@@ -503,6 +523,13 @@ class HBM_API {
             'category' => sanitize_text_field($params['category'] ?? ''),
             'amount' => floatval($params['amount'] ?? 0),
         ];
+
+        if (!empty($params['start_date'])) {
+            $data['start_date'] = sanitize_text_field($params['start_date']);
+        }
+        if (array_key_exists('end_date', $params)) {
+            $data['end_date'] = $params['end_date'] ? sanitize_text_field($params['end_date']) : null;
+        }
 
         // Handle credit_card_id
         if (array_key_exists('credit_card_id', $params)) {
