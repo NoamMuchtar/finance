@@ -6,6 +6,10 @@ if (!defined('ABSPATH')) {
 
 class HBM_API {
 
+    private static function get_shared_user_id() {
+        return 1;
+    }
+
     public static function register_routes() {
         $namespace = 'hbm/v1';
 
@@ -180,7 +184,7 @@ class HBM_API {
 
     public static function get_income($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
 
         $query = "SELECT * FROM {$wpdb->prefix}hbm_income WHERE user_id = %d";
         $query_args = [$user_id];
@@ -219,7 +223,7 @@ class HBM_API {
 
     public static function create_income($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
 
         $params = $request->get_json_params();
         if (empty($params)) {
@@ -264,7 +268,7 @@ class HBM_API {
 
     public static function update_income($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $id = intval($request->get_param('id'));
 
         $params = $request->get_json_params();
@@ -300,7 +304,7 @@ class HBM_API {
 
     public static function delete_income($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $id = intval($request->get_param('id'));
 
         $wpdb->delete("{$wpdb->prefix}hbm_income", ['id' => $id, 'user_id' => $user_id]);
@@ -314,7 +318,7 @@ class HBM_API {
 
     public static function get_expenses($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $type = sanitize_text_field($request->get_param('type') ?? '');
         $custom_start = sanitize_text_field($request->get_param('start_date') ?? '');
         $custom_end = sanitize_text_field($request->get_param('end_date') ?? '');
@@ -383,7 +387,7 @@ class HBM_API {
 
     public static function create_expense($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
 
         $params = $request->get_json_params();
         if (empty($params)) {
@@ -540,7 +544,7 @@ class HBM_API {
 
     public static function update_expense($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $id = intval($request->get_param('id'));
 
         $params = $request->get_json_params();
@@ -611,7 +615,7 @@ class HBM_API {
 
     public static function delete_expense($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $id = intval($request->get_param('id'));
 
         // Check if the expense has an allocation_id and subtract from used_amount
@@ -638,7 +642,7 @@ class HBM_API {
 
     public static function get_allocations($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
 
         $results = $wpdb->get_results($wpdb->prepare(
             "SELECT id, label, amount, used_amount, deduction_date, is_active
@@ -653,7 +657,7 @@ class HBM_API {
 
     public static function create_allocation($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
 
         $params = $request->get_json_params();
         if (empty($params)) {
@@ -690,7 +694,7 @@ class HBM_API {
 
     public static function update_allocation($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $id = intval($request->get_param('id'));
 
         $params = $request->get_json_params();
@@ -723,7 +727,7 @@ class HBM_API {
 
     public static function delete_allocation($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $id = intval($request->get_param('id'));
 
         // Set allocation_id = NULL on any expenses that referenced this allocation
@@ -743,7 +747,7 @@ class HBM_API {
 
     public static function get_dashboard($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
 
         $custom_start = sanitize_text_field($request->get_param('start_date') ?? '');
         $custom_end = sanitize_text_field($request->get_param('end_date') ?? '');
@@ -1026,7 +1030,7 @@ class HBM_API {
 
     public static function get_credit_cards($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
 
         $query = "SELECT * FROM {$wpdb->prefix}hbm_credit_cards WHERE user_id = %d";
         $query_args = [$user_id];
@@ -1046,7 +1050,7 @@ class HBM_API {
 
     public static function create_credit_card($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
 
         $params = $request->get_json_params();
         if (empty($params)) {
@@ -1086,7 +1090,7 @@ class HBM_API {
 
     public static function update_credit_card($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $id = intval($request->get_param('id'));
 
         $params = $request->get_json_params();
@@ -1126,7 +1130,7 @@ class HBM_API {
 
     public static function delete_credit_card($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $id = intval($request->get_param('id'));
 
         $wpdb->delete("{$wpdb->prefix}hbm_credit_cards", ['id' => $id, 'user_id' => $user_id]);
@@ -1140,7 +1144,7 @@ class HBM_API {
 
     public static function get_bank_accounts($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
 
         $query = "SELECT * FROM {$wpdb->prefix}hbm_bank_accounts WHERE user_id = %d";
         $query_args = [$user_id];
@@ -1160,7 +1164,7 @@ class HBM_API {
 
     public static function create_bank_account($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
 
         $params = $request->get_json_params();
         if (empty($params)) {
@@ -1197,7 +1201,7 @@ class HBM_API {
 
     public static function update_bank_account($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $id = intval($request->get_param('id'));
 
         $params = $request->get_json_params();
@@ -1237,7 +1241,7 @@ class HBM_API {
 
     public static function delete_bank_account($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $id = intval($request->get_param('id'));
 
         $wpdb->delete("{$wpdb->prefix}hbm_bank_accounts", ['id' => $id, 'user_id' => $user_id]);
@@ -1251,7 +1255,7 @@ class HBM_API {
 
     public static function get_standing_orders($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $month = sanitize_text_field($request->get_param('month') ?? '');
 
         $query = "SELECT * FROM {$wpdb->prefix}hbm_standing_orders WHERE user_id = %d";
@@ -1274,7 +1278,7 @@ class HBM_API {
 
     public static function create_standing_order($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
 
         $params = $request->get_json_params();
         if (empty($params)) {
@@ -1319,7 +1323,7 @@ class HBM_API {
 
     public static function update_standing_order($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $id = intval($request->get_param('id'));
 
         $params = $request->get_json_params();
@@ -1352,7 +1356,7 @@ class HBM_API {
 
     public static function delete_standing_order($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $id = intval($request->get_param('id'));
 
         $wpdb->delete("{$wpdb->prefix}hbm_standing_orders", ['id' => $id, 'user_id' => $user_id]);
@@ -1366,7 +1370,7 @@ class HBM_API {
 
     public static function get_reserved_payments($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $month = sanitize_text_field($request->get_param('month') ?? '');
         $upcoming = intval($request->get_param('upcoming') ?? 0);
 
@@ -1400,7 +1404,7 @@ class HBM_API {
 
     public static function create_reserved_payment($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
 
         $params = $request->get_json_params();
         if (empty($params)) {
@@ -1437,7 +1441,7 @@ class HBM_API {
 
     public static function update_reserved_payment($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $id = intval($request->get_param('id'));
 
         $params = $request->get_json_params();
@@ -1466,7 +1470,7 @@ class HBM_API {
 
     public static function delete_reserved_payment($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $id = intval($request->get_param('id'));
 
         $wpdb->delete("{$wpdb->prefix}hbm_reserved_payments", ['id' => $id, 'user_id' => $user_id]);
@@ -1480,7 +1484,7 @@ class HBM_API {
 
     public static function get_collections($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $status = sanitize_text_field($request->get_param('status') ?? '');
 
         $query = "SELECT * FROM {$wpdb->prefix}hbm_collections WHERE user_id = %d";
@@ -1500,7 +1504,7 @@ class HBM_API {
 
     public static function create_collection($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
 
         $params = $request->get_json_params();
         if (empty($params)) {
@@ -1532,7 +1536,7 @@ class HBM_API {
 
     public static function update_collection($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $id = intval($request->get_param('id'));
 
         $params = $request->get_json_params();
@@ -1559,7 +1563,7 @@ class HBM_API {
 
     public static function delete_collection($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $id = intval($request->get_param('id'));
 
         $wpdb->delete("{$wpdb->prefix}hbm_collections", ['id' => $id, 'user_id' => $user_id]);
@@ -1573,7 +1577,7 @@ class HBM_API {
 
     public static function get_savings_log($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
 
         $results = $wpdb->get_results($wpdb->prepare(
             "SELECT sl.*, e.title as expense_title
@@ -1589,7 +1593,7 @@ class HBM_API {
 
     public static function create_savings_log($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
 
         $params = $request->get_json_params();
         if (empty($params)) {
@@ -1624,7 +1628,7 @@ class HBM_API {
 
     public static function get_savings_accounts($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         return rest_ensure_response($wpdb->get_results($wpdb->prepare(
             "SELECT * FROM {$wpdb->prefix}hbm_savings_accounts WHERE user_id = %d ORDER BY name ASC",
             $user_id
@@ -1633,7 +1637,7 @@ class HBM_API {
 
     public static function create_savings_account($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $params = $request->get_json_params();
         if (empty($params)) $params = $request->get_params();
 
@@ -1660,7 +1664,7 @@ class HBM_API {
 
     public static function update_savings_account($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $id = intval($request->get_param('id'));
         $params = $request->get_json_params();
         if (empty($params)) $params = $request->get_params();
@@ -1690,7 +1694,7 @@ class HBM_API {
 
     public static function delete_savings_account($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $id = intval($request->get_param('id'));
 
         $wpdb->delete("{$wpdb->prefix}hbm_savings_accounts", ['id' => $id, 'user_id' => $user_id]);
@@ -1699,7 +1703,7 @@ class HBM_API {
 
     public static function get_savings_summary($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
 
         $accounts = $wpdb->get_results($wpdb->prepare(
             "SELECT * FROM {$wpdb->prefix}hbm_savings_accounts WHERE user_id = %d ORDER BY name ASC",
@@ -1776,7 +1780,7 @@ class HBM_API {
     // =========================================================================
 
     public static function get_user_settings($request) {
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $user_type = get_user_meta($user_id, 'hbm_user_type', true);
 
         return rest_ensure_response([
@@ -1785,7 +1789,7 @@ class HBM_API {
     }
 
     public static function save_user_settings($request) {
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
 
         $params = $request->get_json_params();
         if (empty($params)) {
@@ -1809,7 +1813,7 @@ class HBM_API {
 
     public static function get_cash_flow($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $bank_account_id = intval($request->get_param('bank_account_id') ?? 0);
         $months_ahead = intval($request->get_param('months_ahead') ?? 3);
         $is_business_param = $request->get_param('is_business');
@@ -2083,7 +2087,7 @@ class HBM_API {
 
     public static function get_business_dashboard($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $custom_start = sanitize_text_field($request->get_param('start_date') ?? '');
         $custom_end = sanitize_text_field($request->get_param('end_date') ?? '');
         if ($custom_start && $custom_end) {
@@ -2237,7 +2241,7 @@ class HBM_API {
     // =========================================================================
     public static function get_credit_card_charges($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $credit_card_id = intval($request->get_param('credit_card_id'));
         $month = sanitize_text_field($request->get_param('month') ?? date('Y-m'));
 
@@ -2330,7 +2334,7 @@ class HBM_API {
 
     public static function check_overdraft($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
 
         // Get all bank accounts for the user
         $bank_accounts = $wpdb->get_results($wpdb->prepare(
@@ -2525,7 +2529,7 @@ class HBM_API {
 
     public static function create_salary_transfer($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
 
         $params = $request->get_json_params();
         if (empty($params)) {
@@ -2597,7 +2601,7 @@ class HBM_API {
 
     public static function get_bank_balances($request) {
         global $wpdb;
-        $user_id = get_current_user_id();
+        $user_id = self::get_shared_user_id();
         $target_date = sanitize_text_field($request->get_param('target_date') ?? date('Y-m-d'));
         $is_business = $request->get_param('is_business');
 
