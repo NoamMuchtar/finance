@@ -43,6 +43,10 @@
 
         var url = API + endpoint;
 
+        if (method === 'GET') {
+            opts.cache = 'no-store';
+        }
+
         if (method === 'GET' && data) {
             var params = new URLSearchParams();
             Object.keys(data).forEach(function (key) {
@@ -789,9 +793,10 @@
     // ===================== Income =====================
     function loadIncome() {
         apiRequest('income', 'GET', { month: currentMonth }).then(function (data) {
+            console.log('HBM loadIncome response:', data, 'month:', currentMonth);
             var container = document.getElementById('hbm-income-list');
             if (!container) return;
-            if (!data || data.length === 0) {
+            if (!data || !Array.isArray(data) || data.length === 0) {
                 container.innerHTML = '<div class="hbm-empty-state"><div class="hbm-empty-state-icon">💼</div><p>אין הכנסות להצגה</p></div>';
                 return;
             }
@@ -859,12 +864,16 @@
             var method = isEdit ? 'PUT' : 'POST';
             var endpoint = isEdit ? 'income/' + editData.id : 'income';
             apiRequest(endpoint, method, payload).then(function (response) {
-                if (response && (response.id || response.success)) {
+                console.log('HBM income save response:', response);
+                if (response && !response.code && (response.id || response.success)) {
                     closeModal();
                     loadIncome();
                     loadDashboard();
                 } else {
-                    alert('שגיאה בשמירת הכנסה: ' + (response && response.message ? response.message : 'שגיאה לא ידועה'));
+                    var msg = 'שגיאה בשמירת הכנסה';
+                    if (response && response.message) msg += ': ' + response.message;
+                    if (response && response.code) msg += ' (' + response.code + ')';
+                    alert(msg);
                 }
             });
         });

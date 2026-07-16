@@ -150,12 +150,14 @@ class HBM_API {
         global $wpdb;
         $user_id = get_current_user_id();
         $month = sanitize_text_field($request->get_param('month') ?? date('Y-m'));
+        $month_start = $month . '-01';
+        $month_end = date('Y-m-t', strtotime($month_start));
 
         $query = "SELECT * FROM {$wpdb->prefix}hbm_income
              WHERE user_id = %d
-             AND start_date <= LAST_DAY(%s)
+             AND start_date <= %s
              AND (end_date IS NULL OR end_date >= %s)";
-        $query_args = [$user_id, $month . '-01', $month . '-01'];
+        $query_args = [$user_id, $month_end, $month_start];
 
         $is_business = $request->get_param('is_business');
         if ($is_business !== null && $is_business !== '') {
@@ -166,6 +168,10 @@ class HBM_API {
         $query .= " ORDER BY created_at DESC";
 
         $results = $wpdb->get_results($wpdb->prepare($query, $query_args));
+
+        if ($results === null) {
+            return new WP_Error('db_error', 'שגיאת מסד נתונים: ' . $wpdb->last_error, ['status' => 500]);
+        }
 
         return rest_ensure_response($results);
     }
