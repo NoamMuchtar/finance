@@ -334,7 +334,7 @@
 
     // ===================== Credit Cards =====================
     function loadCreditCards() {
-        apiRequest('credit-cards', 'GET').then(function (data) {
+        apiRequest('credit-cards', 'GET', { is_business: 0 }).then(function (data) {
             if (data && !data.error && Array.isArray(data)) {
                 creditCards = data;
                 renderCreditCardsList();
@@ -391,7 +391,7 @@
 
     // ===================== Bank Accounts =====================
     function loadBankAccounts() {
-        apiRequest('bank-accounts', 'GET').then(function (data) {
+        apiRequest('bank-accounts', 'GET', { is_business: 0 }).then(function (data) {
             if (data && !data.error && Array.isArray(data)) {
                 bankAccounts = data;
                 renderBankAccountsList();
