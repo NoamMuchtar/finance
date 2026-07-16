@@ -839,19 +839,27 @@ class HBM_API {
 
         $budget_status = [];
         $total_allocated = 0;
+        $total_allocation_remaining = 0;
         foreach ($allocations as $alloc) {
             $alloc_amount = floatval($alloc->amount);
-            $used = floatval($alloc->used_amount ?? 0);
+            $used = floatval($wpdb->get_var($wpdb->prepare(
+                "SELECT COALESCE(SUM(amount), 0) FROM {$wpdb->prefix}hbm_expenses
+                 WHERE user_id = %d AND allocation_id = %d
+                 AND start_date >= %s AND start_date <= %s",
+                $user_id, $alloc->id, $month_start, $month_end
+            )));
+            $alloc_remaining = max(0, $alloc_amount - $used);
             $total_allocated += $alloc_amount;
+            $total_allocation_remaining += $alloc_remaining;
             $budget_status[] = [
                 'label' => $alloc->label ?? $alloc->category ?? '',
                 'allocated' => $alloc_amount,
                 'spent' => $used,
-                'remaining' => $alloc_amount - $used,
+                'remaining' => $alloc_remaining,
             ];
         }
 
-        $remaining = $total_income - $total_expenses - $total_allocated;
+        $remaining = $total_income - $total_expenses - $total_allocation_remaining;
 
         // Build expense details: group CC expenses by card, show others individually
         $cc_groups = [];
@@ -955,7 +963,7 @@ class HBM_API {
             'end_date' => $month_end,
             'total_income' => $total_income,
             'total_expenses' => $total_expenses,
-            'total_allocated' => $total_allocated,
+            'total_allocated' => $total_allocation_remaining,
             'remaining' => $remaining,
             'total_savings_cumulative' => $total_savings_cumulative,
             'income_items' => $income,

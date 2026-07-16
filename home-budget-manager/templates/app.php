@@ -91,7 +91,7 @@ if (!defined('ABSPATH')) {
                 </div>
                 <div class="hbm-card hbm-card-allocated">
                     <div class="hbm-card-content">
-                        <h3>הקצאות תקציב</h3>
+                        <h3>יתרת הקצאות</h3>
                         <p class="hbm-amount" id="hbm-total-allocated">₪0</p>
                     </div>
                 </div>
