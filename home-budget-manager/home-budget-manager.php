@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('HBM_VERSION', '1.0.0');
+define('HBM_VERSION', '1.1.0');
 define('HBM_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('HBM_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -39,6 +39,14 @@ register_deactivation_hook(__FILE__, function () {
 });
 
 add_action('hbm_check_reserved_payments', ['HBM_API', 'check_reserved_payments_email']);
+
+add_action('plugins_loaded', function () {
+    $installed_version = get_option('hbm_db_version', '0');
+    if (version_compare($installed_version, HBM_VERSION, '<')) {
+        HBM_Database::create_tables();
+        update_option('hbm_db_version', HBM_VERSION);
+    }
+});
 
 class Home_Budget_Manager {
     private static $instance = null;
