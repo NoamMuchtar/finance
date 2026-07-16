@@ -112,7 +112,7 @@
         var html = '<option value="">בחר כרטיס אשראי</option>';
         creditCards.forEach(function (card) {
             var sel = selectedId && selectedId == card.id ? ' selected' : '';
-            var label = (card.name ? card.name + ' - ' : '') + '**** ' + card.last4 + ' (יום חיוב: ' + card.billing_day + ')';
+            var label = (card.card_name ? card.card_name + ' - ' : '') + '**** ' + card.last_four + ' (יום חיוב: ' + card.billing_day + ')';
             html += '<option value="' + card.id + '"' + sel + '>' + label + '</option>';
         });
         return html;
@@ -123,7 +123,7 @@
         var html = '<option value="">בחר חשבון בנק</option>';
         bankAccounts.forEach(function (acct) {
             var sel = selectedId && selectedId == acct.id ? ' selected' : '';
-            var label = acct.bank_name + ' - ***' + acct.last3;
+            var label = acct.bank_name + ' - ***' + acct.last_three;
             html += '<option value="' + acct.id + '"' + sel + '>' + label + '</option>';
         });
         return html;
@@ -331,7 +331,7 @@
         var html = '';
         creditCards.forEach(function (card) {
             html += '<div class="hbm-settings-item">' +
-                '<span>' + (card.name ? escapeHtml(card.name) + ' - ' : '') + '**** ' + escapeHtml(card.last4) + ' | יום חיוב: ' + card.billing_day + '</span>' +
+                '<span>' + (card.card_name ? escapeHtml(card.card_name) + ' - ' : '') + '**** ' + escapeHtml(card.last_four) + ' | יום חיוב: ' + card.billing_day + '</span>' +
                 '<button class="hbm-btn hbm-btn-danger hbm-btn-sm" onclick="hbmApp.deleteCreditCard(' + card.id + ')">מחק</button>' +
                 '</div>';
         });
@@ -346,9 +346,9 @@
         if (!last4.value || !billingDay.value) { alert('יש למלא 4 ספרות אחרונות ויום חיוב'); return; }
 
         apiRequest('credit-cards', 'POST', {
-            last4: last4.value,
+            last_four: last4.value,
             billing_day: parseInt(billingDay.value),
-            name: name ? name.value : ''
+            card_name: name ? name.value : ''
         }).then(function (data) {
             if (data && data.id) {
                 last4.value = '';
@@ -391,7 +391,7 @@
         var html = '';
         bankAccounts.forEach(function (acct) {
             html += '<div class="hbm-settings-item">' +
-                '<span>' + escapeHtml(acct.bank_name) + ' - ***' + escapeHtml(acct.last3) +
+                '<span>' + escapeHtml(acct.bank_name) + ' - ***' + escapeHtml(acct.last_three) +
                 ' | מסגרת: ' + formatCurrency(acct.credit_limit || 0) +
                 ' | יתרה: ' + formatCurrency(acct.initial_balance || 0) + '</span>' +
                 '<div>' +
@@ -411,7 +411,7 @@
         if (!last3.value || !bankName.value) { alert('יש למלא 3 ספרות אחרונות ושם בנק'); return; }
 
         apiRequest('bank-accounts', 'POST', {
-            last3: last3.value,
+            last_three: last3.value,
             bank_name: bankName.value,
             credit_limit: creditLimit ? parseFloat(creditLimit.value) || 0 : 0,
             initial_balance: initialBalance ? parseFloat(initialBalance.value) || 0 : 0
@@ -432,7 +432,7 @@
 
         var html = '<form id="hbm-edit-ba-form">' +
             '<div class="hbm-form-group"><label>3 ספרות אחרונות</label>' +
-            '<input type="text" name="last3" value="' + escapeHtml(acct.last3) + '" maxlength="3" required></div>' +
+            '<input type="text" name="last_three" value="' + escapeHtml(acct.last_three) + '" maxlength="3" required></div>' +
             '<div class="hbm-form-group"><label>שם הבנק</label>' +
             '<input type="text" name="bank_name" value="' + escapeHtml(acct.bank_name) + '" required></div>' +
             '<div class="hbm-form-row">' +
@@ -452,7 +452,7 @@
             e.preventDefault();
             var form = e.target;
             apiRequest('bank-accounts/' + id, 'PUT', {
-                last3: form.last3.value,
+                last_three: form.last_three.value,
                 bank_name: form.bank_name.value,
                 credit_limit: parseFloat(form.credit_limit.value) || 0,
                 initial_balance: parseFloat(form.initial_balance.value) || 0
@@ -1125,7 +1125,7 @@
                 var bankLabel = '-';
                 if (item.bank_account_id) {
                     var ba = bankAccounts.find(function (a) { return a.id == item.bank_account_id; });
-                    if (ba) bankLabel = ba.bank_name + ' ***' + ba.last3;
+                    if (ba) bankLabel = ba.bank_name + ' ***' + ba.last_three;
                 }
                 var paidBadge = item.is_paid ?
                     '<span class="hbm-badge hbm-badge-saving">שולם</span>' :
