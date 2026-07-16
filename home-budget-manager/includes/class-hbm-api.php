@@ -137,6 +137,11 @@ class HBM_API {
             ['methods' => 'GET', 'callback' => [__CLASS__, 'check_overdraft'], 'permission_callback' => [__CLASS__, 'check_auth']],
         ]);
 
+        // Credit Card Charges
+        register_rest_route($namespace, '/credit-card-charges', [
+            ['methods' => 'GET', 'callback' => [__CLASS__, 'get_credit_card_charges'], 'permission_callback' => [__CLASS__, 'check_auth']],
+        ]);
+
         // Salary Transfer (business expense + personal income)
         register_rest_route($namespace, '/salary-transfer', [
             ['methods' => 'POST', 'callback' => [__CLASS__, 'create_salary_transfer'], 'permission_callback' => [__CLASS__, 'check_auth']],
@@ -854,6 +859,11 @@ class HBM_API {
             'card_name' => sanitize_text_field($params['card_name'] ?? ''),
             'billing_day' => intval($params['billing_day'] ?? 1),
         ];
+
+        $bank_account_id = intval($params['bank_account_id'] ?? 0);
+        if ($bank_account_id) {
+            $data['bank_account_id'] = $bank_account_id;
+        }
 
         $is_business = intval($params['is_business'] ?? 0);
         if ($is_business) {
@@ -1825,6 +1835,92 @@ class HBM_API {
     }
 
     // =========================================================================
+    // Credit Card Charges
+    // =========================================================================
+    public static function get_credit_card_charges($request) {
+        global $wpdb;
+        $user_id = get_current_user_id();
+        $credit_card_id = intval($request->get_param('credit_card_id'));
+        $month = sanitize_text_field($request->get_param('month') ?? date('Y-m'));
+
+        if (!$credit_card_id) {
+            return new WP_Error('missing_data', 'חסר מזהה כרטיס אשראי', ['status' => 400]);
+        }
+
+        $card = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}hbm_credit_cards WHERE id = %d AND user_id = %d",
+            $credit_card_id, $user_id
+        ));
+
+        if (!$card) {
+            return new WP_Error('not_found', 'כרטיס אשראי לא נמצא', ['status' => 404]);
+        }
+
+        $billing_day = intval($card->billing_day);
+        $month_start = $month . '-01';
+        $month_end = date('Y-m-t', strtotime($month_start));
+
+        $query = $wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}hbm_expenses
+             WHERE user_id = %d AND credit_card_id = %d
+             AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)
+             ORDER BY start_date ASC",
+            $user_id, $credit_card_id, $month_end, $month_start
+        );
+
+        $expenses = $wpdb->get_results($query);
+
+        $charges = [];
+        foreach ($expenses as $exp) {
+            if ($exp->type === 'installment') {
+                $months_passed = self::months_between($exp->start_date, $month_start);
+                $current_installment = $months_passed + 1;
+                if ($current_installment > intval($exp->total_installments)) continue;
+                $inst_amount = floatval($exp->installment_amount ?: ($exp->amount / $exp->total_installments));
+                $charges[] = [
+                    'id' => intval($exp->id),
+                    'title' => $exp->title,
+                    'type' => $exp->type,
+                    'amount' => $inst_amount,
+                    'total_amount' => floatval($exp->amount),
+                    'current_installment' => $current_installment,
+                    'total_installments' => intval($exp->total_installments),
+                    'start_date' => $exp->start_date,
+                    'category' => $exp->category,
+                ];
+            } else {
+                $charges[] = [
+                    'id' => intval($exp->id),
+                    'title' => $exp->title,
+                    'type' => $exp->type,
+                    'amount' => floatval($exp->amount),
+                    'total_amount' => floatval($exp->amount),
+                    'current_installment' => null,
+                    'total_installments' => null,
+                    'start_date' => $exp->start_date,
+                    'category' => $exp->category,
+                ];
+            }
+        }
+
+        $total = 0;
+        foreach ($charges as $c) { $total += $c['amount']; }
+
+        return rest_ensure_response([
+            'card' => [
+                'id' => intval($card->id),
+                'card_name' => $card->card_name,
+                'last_four' => $card->last_four,
+                'billing_day' => intval($card->billing_day),
+                'is_business' => intval($card->is_business ?? 0),
+            ],
+            'month' => $month,
+            'total' => $total,
+            'charges' => $charges,
+        ]);
+    }
+
+    // =========================================================================
     // Overdraft Check
     // =========================================================================
 
@@ -1840,12 +1936,12 @@ class HBM_API {
 
         $warnings = [];
 
-        $sixty_days_ahead = date('Y-m-d', strtotime('+60 days'));
+        $thirty_days_ahead = date('Y-m-d', strtotime('+30 days'));
 
         foreach ($bank_accounts as $account) {
             $cf_request = new WP_REST_Request('GET');
             $cf_request->set_param('bank_account_id', $account->id);
-            $cf_request->set_param('end_date', $sixty_days_ahead);
+            $cf_request->set_param('end_date', $thirty_days_ahead);
 
             $cf_response = self::get_cash_flow($cf_request);
             $cf_data = $cf_response->get_data();
@@ -1857,7 +1953,7 @@ class HBM_API {
             $credit_limit = floatval($account->credit_limit);
 
             foreach ($cf_data['entries'] as $entry) {
-                if ($entry['date'] > $sixty_days_ahead) {
+                if ($entry['date'] > $thirty_days_ahead) {
                     break;
                 }
                 $running_balance = floatval($entry['running_balance']);

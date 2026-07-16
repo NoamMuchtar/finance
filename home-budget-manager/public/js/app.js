@@ -16,6 +16,8 @@
     var userType = 'salaried';
     var activeCashFlowBankId = null;
     var activeCashFlowIsBiz = false;
+    var activeCcChargesCardId = null;
+    var activeCcChargesIsBiz = false;
 
     var MONTHS_HE = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
     var TYPE_LABELS = { fixed: 'קבועה', installment: 'תשלומים', loan: 'הלוואה', saving: 'חיסכון', one_time: 'חד פעמי' };
@@ -102,6 +104,10 @@
         return d.toLocaleDateString('he-IL');
     }
 
+    function formatDateISO(d) {
+        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+
     function getMonthLabel(monthStr) {
         var parts = monthStr.split('-');
         return MONTHS_HE[parseInt(parts[1]) - 1] + ' ' + parts[0];
@@ -184,6 +190,7 @@
             case 'business': loadBusinessPage(); break;
             case 'biz-dashboard': loadBizDashboard(); break;
             case 'cashflow': loadCashFlowPage(); break;
+            case 'cc-charges': loadCcChargesPage(); break;
         }
     }
 
@@ -200,6 +207,7 @@
         var bizSettings = document.getElementById('hbm-business-settings');
         if (bizSettings) bizSettings.style.display = isSelfEmployed ? '' : 'none';
         buildBizCashFlowNavItems();
+        buildBizCcChargesNavItems();
     }
 
     // Month Selector
@@ -338,6 +346,7 @@
             if (data && !data.error && Array.isArray(data)) {
                 creditCards = data;
                 renderCreditCardsList();
+                buildCcChargesNavItems();
             }
         });
     }
@@ -351,30 +360,44 @@
         }
         var html = '';
         creditCards.forEach(function (card) {
+            var bankLabel = '';
+            if (card.bank_account_id) {
+                var ba = bankAccounts.find(function (a) { return a.id == card.bank_account_id; });
+                if (ba) bankLabel = ' | חשבון: ' + escapeHtml(ba.bank_name) + ' ***' + escapeHtml(ba.last_three);
+            }
             html += '<div class="hbm-settings-item">' +
-                '<span>' + (card.card_name ? escapeHtml(card.card_name) + ' - ' : '') + '**** ' + escapeHtml(card.last_four) + ' | יום חיוב: ' + card.billing_day + '</span>' +
+                '<span>' + (card.card_name ? escapeHtml(card.card_name) + ' - ' : '') + '**** ' + escapeHtml(card.last_four) + ' | יום חיוב: ' + card.billing_day + bankLabel + '</span>' +
                 '<button class="hbm-btn hbm-btn-danger hbm-btn-sm" onclick="hbmApp.deleteCreditCard(' + card.id + ')">מחק</button>' +
                 '</div>';
         });
         container.innerHTML = html;
+        var bankSelect = document.getElementById('hbm-new-cc-bank-account');
+        if (bankSelect) bankSelect.innerHTML = '<option value="">חשבון בנק לחיוב</option>' + buildBankAccountOptions();
     }
 
     function addCreditCard() {
         var last4 = document.getElementById('hbm-new-cc-last4');
         var billingDay = document.getElementById('hbm-new-cc-billing-day');
         var name = document.getElementById('hbm-new-cc-name');
+        var bankAccountSelect = document.getElementById('hbm-new-cc-bank-account');
         if (!last4 || !billingDay || !name) return;
         if (!last4.value || !billingDay.value || !name.value) { alert('יש למלא שם כרטיס, 4 ספרות אחרונות ויום חיוב'); return; }
 
-        apiRequest('credit-cards', 'POST', {
+        var payload = {
             last_four: last4.value,
             billing_day: parseInt(billingDay.value),
             card_name: name.value
-        }).then(function (data) {
+        };
+        if (bankAccountSelect && bankAccountSelect.value) {
+            payload.bank_account_id = parseInt(bankAccountSelect.value);
+        }
+
+        apiRequest('credit-cards', 'POST', payload).then(function (data) {
             if (data && data.id) {
                 last4.value = '';
                 billingDay.value = '';
                 name.value = '';
+                if (bankAccountSelect) bankAccountSelect.value = '';
                 loadCreditCards();
             } else {
                 alert('שגיאה בשמירת כרטיס אשראי: ' + (data && data.message ? data.message : 'שגיאה לא ידועה'));
@@ -518,6 +541,18 @@
         var applyBtn = document.getElementById('hbm-dashboard-date-apply');
         if (applyBtn) {
             applyBtn.addEventListener('click', function () {
+                loadDashboardData();
+            });
+        }
+
+        var nextBtn = document.getElementById('hbm-dashboard-date-next');
+        if (nextBtn) {
+            nextBtn.addEventListener('click', function () {
+                var curEnd = new Date(endEl.value);
+                var nextStart = new Date(curEnd);
+                var nextEnd = new Date(curEnd.getFullYear(), curEnd.getMonth() + 1, 20);
+                startEl.value = formatDateISO(nextStart);
+                endEl.value = formatDateISO(nextEnd);
                 loadDashboardData();
             });
         }
@@ -754,6 +789,153 @@
                     '<td>' + escapeHtml(entry.type_label || entry.type || '-') + '</td>' +
                     '<td><strong>' + formatCurrency(entry.amount) + '</strong></td>' +
                     '<td>' + formatCurrency(entry.running_balance) + '</td>' +
+                    '</tr>';
+            });
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        });
+    }
+
+    // ===================== Credit Card Charges Nav & Page =====================
+    function buildCcChargesNavItems() {
+        var container = document.getElementById('hbm-nav-cc-charges-cards');
+        var header = document.getElementById('hbm-nav-cc-charges-header');
+        var divider = document.getElementById('hbm-nav-cc-charges-divider');
+        if (!container) return;
+
+        container.innerHTML = '';
+        var hasCards = creditCards.length > 0;
+        if (header) header.style.display = hasCards ? '' : 'none';
+        if (divider) divider.style.display = hasCards ? '' : 'none';
+
+        creditCards.forEach(function (card) {
+            var li = document.createElement('li');
+            var a = document.createElement('a');
+            a.href = '#';
+            a.className = 'hbm-sidebar-nav-item';
+            a.setAttribute('data-page', 'cc-charges');
+            a.setAttribute('data-card-id', card.id);
+            a.innerHTML = '<span class="nav-icon">💳</span><span class="nav-label">' + escapeHtml(card.card_name) + ' ***' + escapeHtml(card.last_four) + '</span>';
+            a.addEventListener('click', function (e) {
+                e.preventDefault();
+                document.querySelectorAll('.hbm-sidebar-nav-item').forEach(function (l) { l.classList.remove('active'); });
+                a.classList.add('active');
+                activeCcChargesCardId = card.id;
+                activeCcChargesIsBiz = false;
+                showPage('cc-charges');
+                var sidebar = document.getElementById('hbm-sidebar');
+                if (sidebar) sidebar.classList.remove('open');
+            });
+            li.appendChild(a);
+            container.appendChild(li);
+        });
+    }
+
+    function buildBizCcChargesNavItems() {
+        var container = document.getElementById('hbm-nav-biz-cc-charges-cards');
+        var header = document.getElementById('hbm-nav-biz-cc-charges-header');
+        var divider = document.getElementById('hbm-nav-biz-cc-charges-divider');
+        if (!container) return;
+
+        container.innerHTML = '';
+        var isSelfEmployed = userType === 'self_employed';
+        var hasCards = isSelfEmployed && bizCreditCards.length > 0;
+        if (header) header.style.display = hasCards ? '' : 'none';
+        if (divider) divider.style.display = hasCards ? '' : 'none';
+
+        if (!isSelfEmployed) return;
+
+        bizCreditCards.forEach(function (card) {
+            var li = document.createElement('li');
+            var a = document.createElement('a');
+            a.href = '#';
+            a.className = 'hbm-sidebar-nav-item';
+            a.setAttribute('data-page', 'cc-charges');
+            a.setAttribute('data-card-id', card.id);
+            a.innerHTML = '<span class="nav-icon">💳</span><span class="nav-label">' + escapeHtml(card.card_name) + ' ***' + escapeHtml(card.last_four) + '</span>';
+            a.addEventListener('click', function (e) {
+                e.preventDefault();
+                document.querySelectorAll('.hbm-sidebar-nav-item').forEach(function (l) { l.classList.remove('active'); });
+                a.classList.add('active');
+                activeCcChargesCardId = card.id;
+                activeCcChargesIsBiz = true;
+                showPage('cc-charges');
+                var sidebar = document.getElementById('hbm-sidebar');
+                if (sidebar) sidebar.classList.remove('open');
+            });
+            li.appendChild(a);
+            container.appendChild(li);
+        });
+    }
+
+    function loadCcChargesPage() {
+        if (!activeCcChargesCardId) return;
+
+        var allCards = activeCcChargesIsBiz ? bizCreditCards : creditCards;
+        var card = allCards.find(function (c) { return c.id == activeCcChargesCardId; });
+        var titleEl = document.getElementById('hbm-cc-charges-page-title');
+        if (titleEl && card) {
+            titleEl.textContent = 'פירוט חיובי אשראי - ' + card.card_name + ' ***' + card.last_four + (activeCcChargesIsBiz ? ' (עסקי)' : '');
+        }
+
+        var monthEl = document.getElementById('hbm-cc-charges-month');
+        if (monthEl && !monthEl.value) {
+            monthEl.value = currentMonth;
+        }
+
+        var applyBtn = document.getElementById('hbm-cc-charges-apply');
+        if (applyBtn) {
+            var newBtn = applyBtn.cloneNode(true);
+            applyBtn.parentNode.replaceChild(newBtn, applyBtn);
+            newBtn.addEventListener('click', function () { loadCcChargesData(); });
+        }
+
+        loadCcChargesData();
+    }
+
+    function loadCcChargesData() {
+        var container = document.getElementById('hbm-cc-charges-table');
+        var summaryEl = document.getElementById('hbm-cc-charges-summary');
+        if (!container || !activeCcChargesCardId) return;
+        container.innerHTML = '<div class="hbm-empty-state"><p>טוען חיובים...</p></div>';
+
+        var monthEl = document.getElementById('hbm-cc-charges-month');
+        var month = (monthEl && monthEl.value) ? monthEl.value : currentMonth;
+
+        apiRequest('credit-card-charges', 'GET', { credit_card_id: activeCcChargesCardId, month: month }).then(function (data) {
+            if (!data || data.error || !Array.isArray(data.charges)) {
+                container.innerHTML = '<div class="hbm-empty-state"><p>אין חיובים בתקופה זו</p></div>';
+                if (summaryEl) summaryEl.textContent = '';
+                return;
+            }
+
+            if (summaryEl) {
+                summaryEl.textContent = 'סה"כ חיוב: ' + formatCurrency(data.total);
+            }
+
+            if (data.charges.length === 0) {
+                container.innerHTML = '<div class="hbm-empty-state"><p>אין חיובים בתקופה זו</p></div>';
+                return;
+            }
+
+            var html = '<table class="hbm-table"><thead><tr>' +
+                '<th>תיאור</th><th>קטגוריה</th><th>סוג</th><th>סכום חיוב</th><th>תשלומים</th>' +
+                '</tr></thead><tbody>';
+
+            data.charges.forEach(function (charge) {
+                var typeLabel = TYPE_LABELS[charge.type] || charge.type;
+                var catLabel = CATEGORIES[charge.category] || charge.category || '-';
+                var installmentInfo = '-';
+                if (charge.total_installments && charge.total_installments > 1) {
+                    installmentInfo = charge.current_installment + '/' + charge.total_installments;
+                }
+                html += '<tr>' +
+                    '<td>' + escapeHtml(charge.title) + '</td>' +
+                    '<td>' + escapeHtml(catLabel) + '</td>' +
+                    '<td>' + escapeHtml(typeLabel) + '</td>' +
+                    '<td><strong>' + formatCurrency(charge.amount) + '</strong></td>' +
+                    '<td>' + installmentInfo + '</td>' +
                     '</tr>';
             });
 
@@ -1815,6 +1997,19 @@
                 loadBizDashBankBalances();
             });
         }
+        var nextBtn = document.getElementById('hbm-biz-dash-date-next');
+        if (nextBtn) {
+            nextBtn.addEventListener('click', function () {
+                var curEnd = new Date(endEl.value);
+                var nextStart = new Date(curEnd);
+                var nextEnd = new Date(curEnd.getFullYear(), curEnd.getMonth() + 1, 20);
+                startEl.value = formatDateISO(nextStart);
+                endEl.value = formatDateISO(nextEnd);
+                loadBizDashData();
+                loadBizDashBankBalances();
+            });
+        }
+
         var resetBtn = document.getElementById('hbm-biz-dash-date-reset');
         if (resetBtn) {
             resetBtn.addEventListener('click', function () {
@@ -2234,6 +2429,7 @@
             if (data && !data.error && Array.isArray(data)) {
                 bizCreditCards = data;
                 renderBusinessCreditCardsList();
+                buildBizCcChargesNavItems();
             }
         });
     }
@@ -2247,31 +2443,45 @@
         }
         var html = '';
         bizCreditCards.forEach(function (card) {
+            var bankLabel = '';
+            if (card.bank_account_id) {
+                var ba = bizBankAccounts.find(function (a) { return a.id == card.bank_account_id; });
+                if (ba) bankLabel = ' | חשבון: ' + escapeHtml(ba.bank_name) + ' ***' + escapeHtml(ba.last_three);
+            }
             html += '<div class="hbm-settings-item">' +
-                '<span>' + (card.card_name ? escapeHtml(card.card_name) + ' - ' : '') + '**** ' + escapeHtml(card.last_four) + ' | יום חיוב: ' + card.billing_day + '</span>' +
+                '<span>' + (card.card_name ? escapeHtml(card.card_name) + ' - ' : '') + '**** ' + escapeHtml(card.last_four) + ' | יום חיוב: ' + card.billing_day + bankLabel + '</span>' +
                 '<button class="hbm-btn hbm-btn-danger hbm-btn-sm" onclick="hbmApp.deleteBusinessCreditCard(' + card.id + ')">מחק</button>' +
                 '</div>';
         });
         container.innerHTML = html;
+        var bankSelect = document.getElementById('hbm-new-biz-cc-bank-account');
+        if (bankSelect) bankSelect.innerHTML = '<option value="">חשבון בנק לחיוב</option>' + buildBizBankAccountOptions();
     }
 
     function addBusinessCreditCard() {
         var last4 = document.getElementById('hbm-new-biz-cc-last4');
         var billingDay = document.getElementById('hbm-new-biz-cc-billing-day');
         var name = document.getElementById('hbm-new-biz-cc-name');
+        var bankAccountSelect = document.getElementById('hbm-new-biz-cc-bank-account');
         if (!last4 || !billingDay || !name) return;
         if (!last4.value || !billingDay.value || !name.value) { alert('יש למלא שם כרטיס, 4 ספרות אחרונות ויום חיוב'); return; }
 
-        apiRequest('credit-cards', 'POST', {
+        var payload = {
             last_four: last4.value,
             billing_day: parseInt(billingDay.value),
             card_name: name.value,
             is_business: 1
-        }).then(function (data) {
+        };
+        if (bankAccountSelect && bankAccountSelect.value) {
+            payload.bank_account_id = parseInt(bankAccountSelect.value);
+        }
+
+        apiRequest('credit-cards', 'POST', payload).then(function (data) {
             if (data && data.id) {
                 last4.value = '';
                 billingDay.value = '';
                 name.value = '';
+                if (bankAccountSelect) bankAccountSelect.value = '';
                 loadBusinessCreditCards();
             } else {
                 alert('שגיאה בשמירת כרטיס אשראי עסקי: ' + (data && data.message ? data.message : 'שגיאה לא ידועה'));

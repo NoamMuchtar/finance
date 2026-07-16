@@ -21,6 +21,9 @@ if (!defined('ABSPATH')) {
             <li><div class="hbm-sidebar-nav-divider"></div></li>
             <li><a href="#" data-page="reserved-payments" class="hbm-sidebar-nav-item"><span class="nav-icon">📌</span><span class="nav-label">שמירת מסגרת</span></a></li>
             <li><a href="#" data-page="allocations" class="hbm-sidebar-nav-item"><span class="nav-icon">📐</span><span class="nav-label">הקצאת תקציב</span></a></li>
+            <li><div class="hbm-sidebar-nav-divider" id="hbm-nav-cc-charges-divider" style="display:none;"></div></li>
+            <li id="hbm-nav-cc-charges-header" style="display:none;"><span class="hbm-sidebar-nav-header">פירוט חיובי אשראי</span></li>
+            <ul id="hbm-nav-cc-charges-cards" class="hbm-sidebar-nav-sub"></ul>
             <li><div class="hbm-sidebar-nav-divider" id="hbm-nav-cashflow-divider" style="display:none;"></div></li>
             <li id="hbm-nav-cashflow-header" style="display:none;"><span class="hbm-sidebar-nav-header">תזרים מזומנים</span></li>
             <ul id="hbm-nav-cashflow-accounts" class="hbm-sidebar-nav-sub"></ul>
@@ -28,6 +31,9 @@ if (!defined('ABSPATH')) {
             <li id="hbm-nav-biz-dashboard" style="display:none;"><a href="#" data-page="biz-dashboard" class="hbm-sidebar-nav-item"><span class="nav-icon">📈</span><span class="nav-label">דאשבורד עסקי</span></a></li>
             <li id="hbm-nav-collections" style="display:none;"><a href="#" data-page="collections" class="hbm-sidebar-nav-item"><span class="nav-icon">📋</span><span class="nav-label">ניהול גביה</span></a></li>
             <li id="hbm-nav-business" style="display:none;"><a href="#" data-page="business" class="hbm-sidebar-nav-item"><span class="nav-icon">🏢</span><span class="nav-label">ניהול עסק</span></a></li>
+            <li><div class="hbm-sidebar-nav-divider" id="hbm-nav-biz-cc-charges-divider" style="display:none;"></div></li>
+            <li id="hbm-nav-biz-cc-charges-header" style="display:none;"><span class="hbm-sidebar-nav-header">פירוט חיובי אשראי - עסקי</span></li>
+            <ul id="hbm-nav-biz-cc-charges-cards" class="hbm-sidebar-nav-sub"></ul>
             <li><div class="hbm-sidebar-nav-divider" id="hbm-nav-biz-cashflow-divider" style="display:none;"></div></li>
             <li id="hbm-nav-biz-cashflow-header" style="display:none;"><span class="hbm-sidebar-nav-header">תזרים מזומנים - עסקי</span></li>
             <ul id="hbm-nav-biz-cashflow-accounts" class="hbm-sidebar-nav-sub"></ul>
@@ -55,6 +61,7 @@ if (!defined('ABSPATH')) {
                     <label>מתאריך: <input type="date" id="hbm-dashboard-start-date" class="hbm-input-sm"></label>
                     <label>עד תאריך: <input type="date" id="hbm-dashboard-end-date" class="hbm-input-sm"></label>
                     <button class="hbm-btn hbm-btn-sm" id="hbm-dashboard-date-apply">הצג</button>
+                    <button class="hbm-btn hbm-btn-sm hbm-btn-outline" id="hbm-dashboard-date-next">התקופה הבאה</button>
                     <button class="hbm-btn hbm-btn-sm hbm-btn-outline" id="hbm-dashboard-date-reset">איפוס</button>
                 </div>
             </div>
@@ -255,6 +262,7 @@ if (!defined('ABSPATH')) {
                     <label>מתאריך: <input type="date" id="hbm-biz-dash-start-date" class="hbm-input-sm"></label>
                     <label>עד תאריך: <input type="date" id="hbm-biz-dash-end-date" class="hbm-input-sm"></label>
                     <button class="hbm-btn hbm-btn-sm" id="hbm-biz-dash-date-apply">הצג</button>
+                    <button class="hbm-btn hbm-btn-sm hbm-btn-outline" id="hbm-biz-dash-date-next">התקופה הבאה</button>
                     <button class="hbm-btn hbm-btn-sm hbm-btn-outline" id="hbm-biz-dash-date-reset">איפוס</button>
                 </div>
             </div>
@@ -307,6 +315,21 @@ if (!defined('ABSPATH')) {
             <div id="hbm-cashflow-table" class="hbm-table-container"></div>
         </section>
 
+        <!-- Credit Card Charges -->
+        <section id="hbm-page-cc-charges" class="hbm-page">
+            <div class="hbm-page-header">
+                <h2 id="hbm-cc-charges-page-title">פירוט חיובי אשראי</h2>
+            </div>
+            <div class="hbm-cashflow-controls" style="margin-bottom:16px;">
+                <div class="hbm-cashflow-dates">
+                    <label>חודש: <input type="month" id="hbm-cc-charges-month" class="hbm-input-sm"></label>
+                    <button class="hbm-btn hbm-btn-sm" id="hbm-cc-charges-apply">הצג</button>
+                </div>
+            </div>
+            <div id="hbm-cc-charges-summary" style="margin-bottom:12px;font-weight:600;"></div>
+            <div id="hbm-cc-charges-table" class="hbm-table-container"></div>
+        </section>
+
         <!-- Settings -->
         <section id="hbm-page-settings" class="hbm-page">
             <div class="hbm-page-header"><h2>הגדרות</h2></div>
@@ -339,6 +362,7 @@ if (!defined('ABSPATH')) {
                     <input type="text" id="hbm-new-cc-name" placeholder="שם הכרטיס">
                     <input type="text" id="hbm-new-cc-last4" placeholder="4 ספרות אחרונות" maxlength="4">
                     <input type="number" id="hbm-new-cc-billing-day" placeholder="יום חיוב" min="1" max="31">
+                    <select id="hbm-new-cc-bank-account" class="hbm-select-sm"><option value="">חשבון בנק לחיוב</option></select>
                     <button class="hbm-btn hbm-btn-primary" onclick="hbmApp.addCreditCard()">הוסף כרטיס</button>
                 </div>
             </div>
@@ -363,6 +387,7 @@ if (!defined('ABSPATH')) {
                         <input type="text" id="hbm-new-biz-cc-name" placeholder="שם הכרטיס">
                         <input type="text" id="hbm-new-biz-cc-last4" placeholder="4 ספרות אחרונות" maxlength="4">
                         <input type="number" id="hbm-new-biz-cc-billing-day" placeholder="יום חיוב" min="1" max="31">
+                        <select id="hbm-new-biz-cc-bank-account" class="hbm-select-sm"><option value="">חשבון בנק לחיוב</option></select>
                         <button class="hbm-btn hbm-btn-primary" onclick="hbmApp.addBusinessCreditCard()">הוסף כרטיס עסקי</button>
                     </div>
                 </div>

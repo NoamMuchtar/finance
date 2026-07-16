@@ -90,6 +90,7 @@ class HBM_Database {
             last_four varchar(4) NOT NULL,
             card_name varchar(255) NOT NULL,
             billing_day int NOT NULL,
+            bank_account_id bigint(20) unsigned DEFAULT NULL,
             is_business tinyint(1) DEFAULT 0,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -240,11 +241,15 @@ class HBM_Database {
     private static function maybe_alter_other_tables() {
         global $wpdb;
 
-        // Add is_business to credit_cards if not exists
+        // Add is_business and bank_account_id to credit_cards if not exists
         $table = "{$wpdb->prefix}hbm_credit_cards";
         $col = $wpdb->get_results("SHOW COLUMNS FROM {$table} LIKE 'is_business'");
         if (empty($col)) {
             $wpdb->query("ALTER TABLE {$table} ADD COLUMN is_business tinyint(1) DEFAULT 0 AFTER billing_day");
+        }
+        $col = $wpdb->get_results("SHOW COLUMNS FROM {$table} LIKE 'bank_account_id'");
+        if (empty($col)) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN bank_account_id bigint(20) unsigned DEFAULT NULL AFTER billing_day");
         }
 
         // Add balance_date and is_business to bank_accounts if not exists
