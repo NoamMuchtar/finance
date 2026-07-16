@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('HBM_VERSION', '1.4.0');
+define('HBM_VERSION', '1.5.0');
 define('HBM_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('HBM_PLUGIN_URL', plugin_dir_url(__FILE__));
 

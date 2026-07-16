@@ -22,6 +22,7 @@ if (!defined('ABSPATH')) {
             <li><a href="#" data-page="reserved-payments" class="hbm-sidebar-nav-item"><span class="nav-icon">📌</span><span class="nav-label">שמירת מסגרת</span></a></li>
             <li><a href="#" data-page="allocations" class="hbm-sidebar-nav-item"><span class="nav-icon">📐</span><span class="nav-label">הקצאת תקציב</span></a></li>
             <li><a href="#" data-page="expense-categories" class="hbm-sidebar-nav-item"><span class="nav-icon">📊</span><span class="nav-label">פירוט הוצאות</span></a></li>
+            <li><a href="#" data-page="savings-details" class="hbm-sidebar-nav-item"><span class="nav-icon">🏦</span><span class="nav-label">פירוט חסכונות</span></a></li>
             <li><div class="hbm-sidebar-nav-divider" id="hbm-nav-cc-charges-divider" style="display:none;"></div></li>
             <li id="hbm-nav-cc-charges-header" style="display:none;"><span class="hbm-sidebar-nav-header">פירוט חיובי אשראי</span></li>
             <ul id="hbm-nav-cc-charges-cards" class="hbm-sidebar-nav-sub"></ul>
@@ -375,6 +376,12 @@ if (!defined('ABSPATH')) {
             </div>
         </section>
 
+        <!-- Savings Details -->
+        <section id="hbm-page-savings-details" class="hbm-page">
+            <div class="hbm-page-header"><h2>פירוט חסכונות</h2></div>
+            <div id="hbm-savings-details-content"></div>
+        </section>
+
         <!-- Settings -->
         <section id="hbm-page-settings" class="hbm-page">
             <div class="hbm-page-header"><h2>הגדרות</h2></div>
@@ -447,6 +454,16 @@ if (!defined('ABSPATH')) {
                         <input type="number" id="hbm-new-biz-ba-initial-balance" placeholder="יתרת עו״ש" step="0.01">
                         <button class="hbm-btn hbm-btn-primary" onclick="hbmApp.addBusinessBankAccount()">הוסף חשבון עסקי</button>
                     </div>
+                </div>
+            </div>
+
+            <div class="hbm-panel hbm-settings-section">
+                <h3>חשבונות חיסכון</h3>
+                <div id="hbm-savings-accounts-list" class="hbm-settings-items"></div>
+                <div class="hbm-settings-add-form">
+                    <input type="text" id="hbm-new-sa-name" placeholder="שם החיסכון">
+                    <input type="number" id="hbm-new-sa-target" placeholder="סכום יעד (אופציונלי)" step="0.01">
+                    <button class="hbm-btn hbm-btn-primary" onclick="hbmApp.addSavingsAccount()">הוסף חיסכון</button>
                 </div>
             </div>
 

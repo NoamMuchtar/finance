@@ -18,6 +18,7 @@
     var activeCashFlowIsBiz = false;
     var activeCcChargesCardId = null;
     var activeCcChargesIsBiz = false;
+    var savingsAccounts = [];
 
     var MONTHS_HE = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
     var TYPE_LABELS = { fixed: 'קבועה', installment: 'תשלומים', loan: 'הלוואה', saving: 'חיסכון', one_time: 'חד פעמי' };
@@ -34,6 +35,7 @@
         loadCreditCards();
         loadBankAccounts();
         loadAllocationsData();
+        loadSavingsAccounts();
         loadDashboard();
     }
 
@@ -192,6 +194,7 @@
             case 'cashflow': loadCashFlowPage(); break;
             case 'cc-charges': loadCcChargesPage(); break;
             case 'expense-categories': loadExpenseCategoriesPage(); break;
+            case 'savings-details': loadSavingsDetailsPage(); break;
         }
     }
 
@@ -632,7 +635,7 @@
             var totalAllocatedEl = document.getElementById('hbm-total-allocated');
             if (totalAllocatedEl) totalAllocatedEl.textContent = formatCurrency(data.total_allocated || 0);
             var totalSavingsEl = document.getElementById('hbm-total-savings');
-            if (totalSavingsEl) totalSavingsEl.textContent = formatCurrency(data.expenses_by_type.saving || 0);
+            if (totalSavingsEl) totalSavingsEl.textContent = formatCurrency(data.total_savings_cumulative || data.expenses_by_type.saving || 0);
 
             renderExpensesByType(data.expenses_by_type);
             renderExpensesByCategory(data.expenses_by_category);
@@ -657,7 +660,7 @@
             var totalAllocatedEl = document.getElementById('hbm-total-allocated');
             if (totalAllocatedEl) totalAllocatedEl.textContent = formatCurrency(data.total_allocated || 0);
             var totalSavingsEl = document.getElementById('hbm-total-savings');
-            if (totalSavingsEl) totalSavingsEl.textContent = formatCurrency(data.expenses_by_type.saving || 0);
+            if (totalSavingsEl) totalSavingsEl.textContent = formatCurrency(data.total_savings_cumulative || data.expenses_by_type.saving || 0);
 
             renderExpensesByType(data.expenses_by_type);
             renderExpensesByCategory(data.expenses_by_category);
@@ -932,6 +935,163 @@
             });
 
             html += '</tbody></table>';
+            container.innerHTML = html;
+        });
+    }
+
+    // ===================== Savings Accounts =====================
+    function loadSavingsAccounts() {
+        apiRequest('savings-accounts', 'GET').then(function (data) {
+            if (data && !data.error && Array.isArray(data)) {
+                savingsAccounts = data;
+                renderSavingsAccountsList();
+            }
+        });
+    }
+
+    function renderSavingsAccountsList() {
+        var container = document.getElementById('hbm-savings-accounts-list');
+        if (!container) return;
+        if (savingsAccounts.length === 0) {
+            container.innerHTML = '<p class="hbm-empty-hint">לא הוגדרו חשבונות חיסכון</p>';
+            return;
+        }
+        var html = '';
+        savingsAccounts.forEach(function (sa) {
+            var targetLabel = sa.target_amount ? ' | יעד: ' + formatCurrency(sa.target_amount) : '';
+            html += '<div class="hbm-settings-item">' +
+                '<span>' + escapeHtml(sa.name) + targetLabel + '</span>' +
+                '<div class="hbm-settings-item-actions">' +
+                '<button class="hbm-btn hbm-btn-sm" onclick="hbmApp.editSavingsAccount(' + sa.id + ')">ערוך</button>' +
+                '<button class="hbm-btn hbm-btn-danger hbm-btn-sm" onclick="hbmApp.deleteSavingsAccount(' + sa.id + ')">מחק</button>' +
+                '</div></div>';
+        });
+        container.innerHTML = html;
+    }
+
+    function addSavingsAccount() {
+        var nameEl = document.getElementById('hbm-new-sa-name');
+        var targetEl = document.getElementById('hbm-new-sa-target');
+        if (!nameEl || !nameEl.value) { alert('יש למלא שם חיסכון'); return; }
+
+        var payload = { name: nameEl.value };
+        if (targetEl && targetEl.value) payload.target_amount = parseFloat(targetEl.value);
+
+        apiRequest('savings-accounts', 'POST', payload).then(function (data) {
+            if (data && data.id) {
+                nameEl.value = '';
+                if (targetEl) targetEl.value = '';
+                loadSavingsAccounts();
+            } else {
+                alert('שגיאה: ' + (data && data.message ? data.message : 'שגיאה לא ידועה'));
+            }
+        });
+    }
+
+    function editSavingsAccount(id) {
+        var sa = savingsAccounts.find(function (s) { return s.id == id; });
+        if (!sa) return;
+
+        var html = '<form id="hbm-edit-sa-form">' +
+            '<div class="hbm-form-group"><label>שם החיסכון</label>' +
+            '<input type="text" name="name" value="' + escapeHtml(sa.name) + '" required></div>' +
+            '<div class="hbm-form-group"><label>סכום יעד (אופציונלי)</label>' +
+            '<input type="number" step="0.01" name="target_amount" value="' + (sa.target_amount || '') + '"></div>' +
+            '<div class="hbm-form-actions">' +
+            '<button type="submit" class="hbm-btn hbm-btn-primary">עדכן</button>' +
+            '<button type="button" class="hbm-btn hbm-btn-ghost" onclick="hbmApp.closeModal()">ביטול</button>' +
+            '</div></form>';
+
+        openModal('עריכת חשבון חיסכון', html);
+
+        document.getElementById('hbm-edit-sa-form').addEventListener('submit', function (e) {
+            e.preventDefault();
+            var form = e.target;
+            apiRequest('savings-accounts/' + id, 'PUT', {
+                name: form.name.value,
+                target_amount: form.target_amount.value ? parseFloat(form.target_amount.value) : null
+            }).then(function (data) {
+                if (data && data.id) {
+                    closeModal();
+                    loadSavingsAccounts();
+                }
+            });
+        });
+    }
+
+    function deleteSavingsAccount(id) {
+        if (!confirm('האם למחוק חשבון חיסכון זה?')) return;
+        apiRequest('savings-accounts/' + id, 'DELETE').then(function () {
+            loadSavingsAccounts();
+        });
+    }
+
+    function buildSavingsAccountOptions(selectedId) {
+        var html = '<option value="">בחר חשבון חיסכון</option>';
+        savingsAccounts.forEach(function (sa) {
+            var sel = selectedId && selectedId == sa.id ? ' selected' : '';
+            html += '<option value="' + sa.id + '"' + sel + '>' + escapeHtml(sa.name) + '</option>';
+        });
+        return html;
+    }
+
+    // ===================== Savings Details Page =====================
+    function loadSavingsDetailsPage() {
+        var container = document.getElementById('hbm-savings-details-content');
+        if (!container) return;
+        container.innerHTML = '<div class="hbm-empty-state"><p>טוען...</p></div>';
+
+        apiRequest('savings-summary', 'GET').then(function (data) {
+            if (!data || data.error || !Array.isArray(data) || data.length === 0) {
+                container.innerHTML = '<div class="hbm-empty-state"><p>אין חשבונות חיסכון. ניתן להוסיף בהגדרות.</p></div>';
+                return;
+            }
+
+            var grandTotal = 0;
+            var html = '<div class="hbm-savings-details-grid">';
+
+            data.forEach(function (acct) {
+                grandTotal += acct.total_saved;
+                var progressHtml = '';
+                if (acct.target_amount && acct.target_amount > 0) {
+                    var pct = Math.min(100, (acct.total_saved / acct.target_amount) * 100);
+                    var barClass = pct >= 100 ? ' hbm-progress-complete' : '';
+                    progressHtml = '<div class="hbm-savings-progress">' +
+                        '<div class="hbm-savings-progress-bar">' +
+                        '<div class="hbm-savings-progress-fill' + barClass + '" style="width:' + pct.toFixed(1) + '%"></div>' +
+                        '</div>' +
+                        '<span class="hbm-savings-progress-label">' + pct.toFixed(0) + '% מתוך ' + formatCurrency(acct.target_amount) + '</span>' +
+                        '</div>';
+                }
+
+                html += '<div class="hbm-panel hbm-savings-detail-card">' +
+                    '<div class="hbm-savings-detail-header">' +
+                    '<h3>' + escapeHtml(acct.name) + '</h3>' +
+                    '<span class="hbm-savings-detail-total">' + formatCurrency(acct.total_saved) + '</span>' +
+                    '</div>' +
+                    progressHtml;
+
+                if (acct.items && acct.items.length > 0) {
+                    html += '<table class="hbm-table hbm-table-striped"><thead><tr>' +
+                        '<th>תיאור</th><th>סכום חודשי</th><th>תאריך התחלה</th>' +
+                        '</tr></thead><tbody>';
+                    acct.items.forEach(function (item) {
+                        html += '<tr>' +
+                            '<td>' + escapeHtml(item.title) + '</td>' +
+                            '<td class="hbm-amount-cell">' + formatCurrency(item.amount) + '</td>' +
+                            '<td>' + formatDate(item.start_date) + '</td>' +
+                            '</tr>';
+                    });
+                    html += '</tbody></table>';
+                } else {
+                    html += '<p class="hbm-empty-hint">אין הפקדות</p>';
+                }
+
+                html += '</div>';
+            });
+
+            html += '</div>';
+            html += '<div class="hbm-savings-grand-total">סה"כ כל החיסכונות: <strong>' + formatCurrency(grandTotal) + '</strong></div>';
             container.innerHTML = html;
         });
     }
@@ -1560,6 +1720,13 @@
             buildBankAccountOptions(editData ? editData.bank_account_id : null) +
             '</select></div></div>' +
 
+            // Savings account selector
+            '<div id="hbm-saving-account-field" class="hbm-type-fields">' +
+            '<div class="hbm-form-group"><label>חשבון חיסכון</label>' +
+            '<select name="saving_account_id" id="hbm-expense-saving-account">' +
+            buildSavingsAccountOptions(editData ? editData.saving_account_id : null) +
+            '</select></div></div>' +
+
             // Allocation selector
             '<div id="hbm-allocation-field" class="hbm-form-group">' +
             '<label>הקצאת תקציב (אופציונלי)</label>' +
@@ -1608,6 +1775,7 @@
             var paymentMethodField = document.getElementById('hbm-payment-method-field');
             var creditCardField = document.getElementById('hbm-credit-card-field');
             var bankAccountField = document.getElementById('hbm-bank-account-field');
+            var savingAccountField = document.getElementById('hbm-saving-account-field');
             var categoryGroup = document.getElementById('hbm-category-group');
 
             if (installmentFields) installmentFields.classList.toggle('active', type === 'installment');
@@ -1624,6 +1792,7 @@
             var showBankAccount = (type === 'one_time' && (paymentMethod === 'bank_transfer' || paymentMethod === 'check')) ||
                 type === 'loan' || type === 'saving';
             if (bankAccountField) bankAccountField.classList.toggle('active', showBankAccount);
+            if (savingAccountField) savingAccountField.classList.toggle('active', type === 'saving');
 
             // For loans, category is optional
             if (categoryGroup) {
@@ -1680,6 +1849,9 @@
             } else if (type === 'saving') {
                 if (form.bank_account_id.value) {
                     payload.bank_account_id = form.bank_account_id.value;
+                }
+                if (form.saving_account_id && form.saving_account_id.value) {
+                    payload.saving_account_id = parseInt(form.saving_account_id.value);
                 }
             }
 
@@ -2973,6 +3145,7 @@
 
         renderCreditCardsList();
         renderBankAccountsList();
+        renderSavingsAccountsList();
 
         if (userType === 'self_employed') {
             loadBusinessCreditCards();
@@ -3139,6 +3312,9 @@
                 if (item) showBusinessExpenseForm(item);
             });
         },
+        addSavingsAccount: addSavingsAccount,
+        editSavingsAccount: editSavingsAccount,
+        deleteSavingsAccount: deleteSavingsAccount,
         addBusinessCreditCard: addBusinessCreditCard,
         editBusinessCreditCard: editBusinessCreditCard,
         deleteBusinessCreditCard: deleteBusinessCreditCard,

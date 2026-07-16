@@ -160,6 +160,17 @@ class HBM_Database {
             KEY user_id (user_id)
         ) $charset_collate;";
 
+        $tables[] = "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}hbm_savings_accounts (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            user_id bigint(20) unsigned NOT NULL,
+            name varchar(255) NOT NULL,
+            target_amount decimal(12,2) DEFAULT NULL,
+            notes varchar(500) DEFAULT '',
+            created_at datetime DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY user_id (user_id)
+        ) $charset_collate;";
+
         $tables[] = "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}hbm_savings_log (
             id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
             user_id bigint(20) unsigned NOT NULL,
@@ -275,6 +286,13 @@ class HBM_Database {
         $col = $wpdb->get_results("SHOW COLUMNS FROM {$table} LIKE 'bank_account_id'");
         if (empty($col)) {
             $wpdb->query("ALTER TABLE {$table} ADD COLUMN bank_account_id bigint(20) unsigned DEFAULT NULL AFTER is_business");
+        }
+
+        // Add saving_account_id to expenses if not exists
+        $table = "{$wpdb->prefix}hbm_expenses";
+        $col = $wpdb->get_results("SHOW COLUMNS FROM {$table} LIKE 'saving_account_id'");
+        if (empty($col)) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN saving_account_id bigint(20) unsigned DEFAULT NULL AFTER allocation_id");
         }
 
         // Alter budget_allocations: add label if not exists

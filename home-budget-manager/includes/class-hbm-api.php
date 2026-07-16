@@ -117,6 +117,22 @@ class HBM_API {
             ['methods' => 'POST', 'callback' => [__CLASS__, 'create_savings_log'], 'permission_callback' => [__CLASS__, 'check_auth']],
         ]);
 
+        // Savings Accounts
+        register_rest_route($namespace, '/savings-accounts', [
+            ['methods' => 'GET', 'callback' => [__CLASS__, 'get_savings_accounts'], 'permission_callback' => [__CLASS__, 'check_auth']],
+            ['methods' => 'POST', 'callback' => [__CLASS__, 'create_savings_account'], 'permission_callback' => [__CLASS__, 'check_auth']],
+        ]);
+
+        register_rest_route($namespace, '/savings-accounts/(?P<id>\d+)', [
+            ['methods' => WP_REST_Server::EDITABLE, 'callback' => [__CLASS__, 'update_savings_account'], 'permission_callback' => [__CLASS__, 'check_auth']],
+            ['methods' => WP_REST_Server::DELETABLE, 'callback' => [__CLASS__, 'delete_savings_account'], 'permission_callback' => [__CLASS__, 'check_auth']],
+        ]);
+
+        // Savings Summary
+        register_rest_route($namespace, '/savings-summary', [
+            ['methods' => 'GET', 'callback' => [__CLASS__, 'get_savings_summary'], 'permission_callback' => [__CLASS__, 'check_auth']],
+        ]);
+
         // User Settings
         register_rest_route($namespace, '/user-settings', [
             ['methods' => 'GET', 'callback' => [__CLASS__, 'get_user_settings'], 'permission_callback' => [__CLASS__, 'check_auth']],
@@ -407,6 +423,9 @@ class HBM_API {
             $data['allocation_id'] = $allocation_id;
         }
 
+        // Handle saving_account_id
+        $data['saving_account_id'] = !empty($params['saving_account_id']) ? intval($params['saving_account_id']) : null;
+
         // Handle credit_card_id
         if (isset($params['credit_card_id']) && $params['credit_card_id'] !== '' && $params['credit_card_id'] !== null) {
             $data['credit_card_id'] = intval($params['credit_card_id']);
@@ -544,6 +563,11 @@ class HBM_API {
         // Handle payment_method
         if (array_key_exists('payment_method', $params)) {
             $data['payment_method'] = $params['payment_method'] !== null ? sanitize_text_field($params['payment_method']) : null;
+        }
+
+        // Handle saving_account_id
+        if (array_key_exists('saving_account_id', $params)) {
+            $data['saving_account_id'] = !empty($params['saving_account_id']) ? intval($params['saving_account_id']) : null;
         }
 
         $type = sanitize_text_field($params['type'] ?? '');
@@ -893,6 +917,13 @@ class HBM_API {
             ];
         }
 
+        $total_savings_cumulative = floatval($wpdb->get_var($wpdb->prepare(
+            "SELECT COALESCE(SUM(amount), 0) FROM {$wpdb->prefix}hbm_expenses
+             WHERE user_id = %d AND type = 'saving' AND (is_business = 0 OR is_business IS NULL)
+             AND start_date <= %s",
+            $user_id, $month_end
+        )));
+
         return rest_ensure_response([
             'month' => $month,
             'start_date' => $month_start,
@@ -901,6 +932,7 @@ class HBM_API {
             'total_expenses' => $total_expenses,
             'total_allocated' => $total_allocated,
             'remaining' => $remaining,
+            'total_savings_cumulative' => $total_savings_cumulative,
             'income_items' => $income,
             'expenses_by_category' => $expenses_by_category,
             'expenses_by_type' => $expenses_by_type,
@@ -1538,6 +1570,159 @@ class HBM_API {
 
         $data['id'] = $wpdb->insert_id;
         return rest_ensure_response($data);
+    }
+
+    // =========================================================================
+    // Savings Accounts
+    // =========================================================================
+
+    public static function get_savings_accounts($request) {
+        global $wpdb;
+        $user_id = get_current_user_id();
+        return rest_ensure_response($wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}hbm_savings_accounts WHERE user_id = %d ORDER BY name ASC",
+            $user_id
+        )));
+    }
+
+    public static function create_savings_account($request) {
+        global $wpdb;
+        $user_id = get_current_user_id();
+        $params = $request->get_json_params();
+        if (empty($params)) $params = $request->get_params();
+
+        $name = sanitize_text_field($params['name'] ?? '');
+        if (empty($name)) {
+            return new WP_Error('missing_data', 'שם החיסכון חובה', ['status' => 400]);
+        }
+
+        $data = [
+            'user_id' => $user_id,
+            'name' => $name,
+            'target_amount' => isset($params['target_amount']) && $params['target_amount'] !== '' ? floatval($params['target_amount']) : null,
+            'notes' => sanitize_text_field($params['notes'] ?? ''),
+        ];
+
+        $result = $wpdb->insert("{$wpdb->prefix}hbm_savings_accounts", $data);
+        if ($result === false) {
+            return new WP_Error('db_error', 'שגיאה בשמירת הנתונים: ' . $wpdb->last_error, ['status' => 500]);
+        }
+
+        $data['id'] = $wpdb->insert_id;
+        return rest_ensure_response($data);
+    }
+
+    public static function update_savings_account($request) {
+        global $wpdb;
+        $user_id = get_current_user_id();
+        $id = intval($request->get_param('id'));
+        $params = $request->get_json_params();
+        if (empty($params)) $params = $request->get_params();
+
+        $data = [];
+        if (isset($params['name'])) $data['name'] = sanitize_text_field($params['name']);
+        if (array_key_exists('target_amount', $params)) {
+            $data['target_amount'] = $params['target_amount'] !== null && $params['target_amount'] !== '' ? floatval($params['target_amount']) : null;
+        }
+        if (isset($params['notes'])) $data['notes'] = sanitize_text_field($params['notes']);
+
+        if (empty($data)) {
+            return new WP_Error('missing_data', 'לא נשלחו נתונים לעדכון', ['status' => 400]);
+        }
+
+        $result = $wpdb->update("{$wpdb->prefix}hbm_savings_accounts", $data, ['id' => $id, 'user_id' => $user_id]);
+        if ($result === false) {
+            return new WP_Error('db_error', 'שגיאה בעדכון הנתונים: ' . $wpdb->last_error, ['status' => 500]);
+        }
+
+        $updated = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}hbm_savings_accounts WHERE id = %d AND user_id = %d",
+            $id, $user_id
+        ));
+        return rest_ensure_response($updated);
+    }
+
+    public static function delete_savings_account($request) {
+        global $wpdb;
+        $user_id = get_current_user_id();
+        $id = intval($request->get_param('id'));
+
+        $wpdb->delete("{$wpdb->prefix}hbm_savings_accounts", ['id' => $id, 'user_id' => $user_id]);
+        return rest_ensure_response(['success' => true]);
+    }
+
+    public static function get_savings_summary($request) {
+        global $wpdb;
+        $user_id = get_current_user_id();
+
+        $accounts = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}hbm_savings_accounts WHERE user_id = %d ORDER BY name ASC",
+            $user_id
+        ));
+
+        $expenses = $wpdb->get_results($wpdb->prepare(
+            "SELECT e.*, sa.name as saving_account_name
+             FROM {$wpdb->prefix}hbm_expenses e
+             LEFT JOIN {$wpdb->prefix}hbm_savings_accounts sa ON e.saving_account_id = sa.id
+             WHERE e.user_id = %d AND e.type = 'saving' AND (e.is_business = 0 OR e.is_business IS NULL)
+             ORDER BY e.start_date DESC",
+            $user_id
+        ));
+
+        $account_totals = [];
+        $unassigned_total = 0;
+        $unassigned_items = [];
+
+        foreach ($expenses as $exp) {
+            $monthly = floatval($exp->amount);
+            if (!empty($exp->saving_account_id)) {
+                $aid = $exp->saving_account_id;
+                if (!isset($account_totals[$aid])) {
+                    $account_totals[$aid] = ['total' => 0, 'items' => []];
+                }
+                $account_totals[$aid]['total'] += $monthly;
+                $account_totals[$aid]['items'][] = [
+                    'id' => $exp->id,
+                    'title' => $exp->title,
+                    'amount' => $monthly,
+                    'start_date' => $exp->start_date,
+                    'end_date' => $exp->end_date,
+                ];
+            } else {
+                $unassigned_total += $monthly;
+                $unassigned_items[] = [
+                    'id' => $exp->id,
+                    'title' => $exp->title,
+                    'amount' => $monthly,
+                    'start_date' => $exp->start_date,
+                    'end_date' => $exp->end_date,
+                ];
+            }
+        }
+
+        $result = [];
+        foreach ($accounts as $acct) {
+            $data = $account_totals[$acct->id] ?? ['total' => 0, 'items' => []];
+            $result[] = [
+                'id' => $acct->id,
+                'name' => $acct->name,
+                'target_amount' => $acct->target_amount ? floatval($acct->target_amount) : null,
+                'total_saved' => $data['total'],
+                'items' => $data['items'],
+            ];
+        }
+
+        if ($unassigned_total > 0 || count($unassigned_items) > 0) {
+            $result[] = [
+                'id' => null,
+                'name' => 'ללא חשבון',
+                'target_amount' => null,
+                'total_saved' => $unassigned_total,
+                'items' => $unassigned_items,
+            ];
+        }
+
+        return rest_ensure_response($result);
     }
 
     // =========================================================================
