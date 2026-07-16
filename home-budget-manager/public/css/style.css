@@ -2410,6 +2410,134 @@
     gap: 4px;
 }
 
+.hbm-cashflow-summary-cards {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.hbm-cashflow-summary-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 20px;
+    background: var(--hbm-card-bg);
+    border-radius: var(--hbm-radius-sm);
+    box-shadow: var(--hbm-card-shadow);
+    min-width: 160px;
+}
+
+.hbm-cashflow-summary-item span {
+    font-size: 12px;
+    color: var(--hbm-text-secondary);
+}
+
+.hbm-cashflow-summary-item strong {
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.hbm-cashflow-opening-row {
+    background: var(--hbm-primary-light) !important;
+    font-weight: 600;
+}
+
+.hbm-cashflow-income-row td:nth-child(4) {
+    color: var(--hbm-success);
+}
+
+.hbm-cashflow-charge-row td:nth-child(5) {
+    color: var(--hbm-danger);
+}
+
+.hbm-table-cashflow th:nth-child(4),
+.hbm-table-cashflow th:nth-child(5),
+.hbm-table-cashflow th:nth-child(6),
+.hbm-table-cashflow td:nth-child(4),
+.hbm-table-cashflow td:nth-child(5),
+.hbm-table-cashflow td:nth-child(6) {
+    text-align: left;
+    direction: ltr;
+}
+
+/* ============================================
+   Expense Categories Page
+   ============================================ */
+.hbm-expcat-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-top: 16px;
+}
+
+@media (max-width: 768px) {
+    .hbm-expcat-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+.hbm-pie-chart-container {
+    display: flex;
+    justify-content: center;
+    padding: 20px 0;
+}
+
+.hbm-pie-svg {
+    max-width: 100%;
+    height: auto;
+}
+
+.hbm-pie-slice {
+    transition: opacity 0.2s ease;
+}
+
+.hbm-pie-slice:hover {
+    opacity: 0.8;
+    filter: brightness(1.1);
+}
+
+.hbm-pie-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 16px 16px;
+}
+
+.hbm-pie-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: var(--hbm-radius-xs);
+    transition: background 0.15s ease;
+}
+
+.hbm-pie-legend-item:hover {
+    background: var(--hbm-primary-light);
+}
+
+.hbm-pie-legend-color {
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.hbm-pie-legend-label {
+    flex: 1;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--hbm-text-primary);
+}
+
+.hbm-pie-legend-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--hbm-text-secondary);
+    direction: ltr;
+    text-align: left;
+}
+
 /* ============================================
    Savings Report Groups
    ============================================ */

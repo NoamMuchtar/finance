@@ -21,6 +21,7 @@ if (!defined('ABSPATH')) {
             <li><div class="hbm-sidebar-nav-divider"></div></li>
             <li><a href="#" data-page="reserved-payments" class="hbm-sidebar-nav-item"><span class="nav-icon">📌</span><span class="nav-label">שמירת מסגרת</span></a></li>
             <li><a href="#" data-page="allocations" class="hbm-sidebar-nav-item"><span class="nav-icon">📐</span><span class="nav-label">הקצאת תקציב</span></a></li>
+            <li><a href="#" data-page="expense-categories" class="hbm-sidebar-nav-item"><span class="nav-icon">📊</span><span class="nav-label">פירוט הוצאות</span></a></li>
             <li><div class="hbm-sidebar-nav-divider" id="hbm-nav-cc-charges-divider" style="display:none;"></div></li>
             <li id="hbm-nav-cc-charges-header" style="display:none;"><span class="hbm-sidebar-nav-header">פירוט חיובי אשראי</span></li>
             <ul id="hbm-nav-cc-charges-cards" class="hbm-sidebar-nav-sub"></ul>
@@ -332,6 +333,7 @@ if (!defined('ABSPATH')) {
                     <button class="hbm-btn hbm-btn-sm" id="hbm-cashflow-apply">הצג</button>
                 </div>
             </div>
+            <div id="hbm-cashflow-summary"></div>
             <div id="hbm-cashflow-table" class="hbm-table-container"></div>
         </section>
 
@@ -348,6 +350,29 @@ if (!defined('ABSPATH')) {
             </div>
             <div id="hbm-cc-charges-summary" style="margin-bottom:12px;font-weight:600;"></div>
             <div id="hbm-cc-charges-table" class="hbm-table-container"></div>
+        </section>
+
+        <!-- Expense Categories Breakdown -->
+        <section id="hbm-page-expense-categories" class="hbm-page">
+            <div class="hbm-page-header"><h2>פירוט הוצאות לפי קטגוריות</h2></div>
+            <div class="hbm-dashboard-date-controls">
+                <div class="hbm-cashflow-dates">
+                    <label>מתאריך: <input type="date" id="hbm-expcat-start-date" class="hbm-input-sm"></label>
+                    <label>עד תאריך: <input type="date" id="hbm-expcat-end-date" class="hbm-input-sm"></label>
+                    <button class="hbm-btn hbm-btn-sm" id="hbm-expcat-apply">הצג</button>
+                </div>
+            </div>
+            <div class="hbm-expcat-layout">
+                <div class="hbm-panel">
+                    <h3>חלוקה לפי קטגוריות</h3>
+                    <div id="hbm-expcat-chart" class="hbm-pie-chart-container"></div>
+                    <div id="hbm-expcat-legend" class="hbm-pie-legend"></div>
+                </div>
+                <div class="hbm-panel" id="hbm-expcat-details-panel" style="display:none;">
+                    <h3 id="hbm-expcat-details-title">הוצאות</h3>
+                    <div id="hbm-expcat-details-table" class="hbm-table-container"></div>
+                </div>
+            </div>
         </section>
 
         <!-- Settings -->

@@ -191,6 +191,7 @@
             case 'biz-dashboard': loadBizDashboard(); break;
             case 'cashflow': loadCashFlowPage(); break;
             case 'cc-charges': loadCcChargesPage(); break;
+            case 'expense-categories': loadExpenseCategoriesPage(); break;
         }
     }
 
@@ -562,7 +563,7 @@
         var now = new Date();
         var year = now.getFullYear();
         var month = now.getMonth();
-        var startDate = new Date(year, month - 1, 20);
+        var startDate = new Date(year, month - 1, 21);
         var endDate = new Date(year, month, 20);
         return {
             start_date: startDate.getFullYear() + '-' + String(startDate.getMonth() + 1).padStart(2, '0') + '-' + String(startDate.getDate()).padStart(2, '0'),
@@ -590,7 +591,7 @@
         if (nextBtn) {
             nextBtn.addEventListener('click', function () {
                 var curEnd = new Date(endEl.value);
-                var nextStart = new Date(curEnd);
+                var nextStart = new Date(curEnd.getFullYear(), curEnd.getMonth(), 21);
                 var nextEnd = new Date(curEnd.getFullYear(), curEnd.getMonth() + 1, 20);
                 startEl.value = formatDateISO(nextStart);
                 endEl.value = formatDateISO(nextEnd);
@@ -706,7 +707,7 @@
             return;
         }
         var html = '<table class="hbm-table hbm-table-striped"><thead><tr>' +
-            '<th>תיאור</th><th>סוג</th><th>קטגוריה</th><th>יום הורדה</th><th>סכום</th>' +
+            '<th>תיאור</th><th>סוג</th><th>קטגוריה</th><th>תאריך הורדה</th><th>סכום</th>' +
             '</tr></thead><tbody>';
         details.forEach(function (item) {
             var typeLabel, rowClass = '';
@@ -722,12 +723,12 @@
                 typeLabel = '<span class="hbm-badge ' + badgeClass + '">' + (TYPE_LABELS[item.type] || item.type || '-') + '</span>';
             }
             var catLabel = CATEGORIES[item.category] || item.category || '-';
-            var deductionDay = item.deduction_day ? item.deduction_day + ' לחודש' : '-';
+            var deductionDate = item.deduction_date ? formatDate(item.deduction_date) : '-';
             html += '<tr' + rowClass + '>' +
                 '<td><strong>' + escapeHtml(item.title) + '</strong></td>' +
                 '<td>' + typeLabel + '</td>' +
                 '<td>' + catLabel + '</td>' +
-                '<td>' + deductionDay + '</td>' +
+                '<td>' + deductionDate + '</td>' +
                 '<td class="hbm-amount-cell">' + formatCurrency(item.amount) + '</td>' +
                 '</tr>';
         });
@@ -885,24 +886,213 @@
                 return;
             }
 
-            var html = '<table class="hbm-table"><thead><tr>' +
-                '<th>תאריך</th><th>תיאור</th><th>סוג</th><th>סכום</th><th>יתרה</th>' +
+            var summaryEl = document.getElementById('hbm-cashflow-summary');
+            if (summaryEl) {
+                summaryEl.innerHTML = '<div class="hbm-cashflow-summary-cards">' +
+                    '<div class="hbm-cashflow-summary-item"><span>יתרה התחלתית</span><strong>' + formatCurrency(data.initial_balance) + '</strong></div>' +
+                    '<div class="hbm-cashflow-summary-item"><span>יתרה צפויה</span><strong class="' + (data.current_balance < 0 ? 'hbm-text-danger' : 'hbm-text-success') + '">' + formatCurrency(data.current_balance) + '</strong></div>' +
+                    '</div>';
+            }
+
+            var html = '<table class="hbm-table hbm-table-striped hbm-table-cashflow"><thead><tr>' +
+                '<th>תאריך</th><th>תיאור</th><th>סוג</th><th>הכנסה</th><th>הוצאה</th><th>יתרה</th>' +
                 '</tr></thead><tbody>';
 
+            html += '<tr class="hbm-cashflow-opening-row">' +
+                '<td colspan="5"><strong>יתרה פתיחה</strong></td>' +
+                '<td class="hbm-amount-cell">' + formatCurrency(data.initial_balance) + '</td>' +
+                '</tr>';
+
+            var CF_TYPE_LABELS = {
+                income: 'הכנסה',
+                expense_one_time: 'חד פעמי',
+                expense_fixed: 'הוצאה קבועה',
+                expense_saving: 'חיסכון',
+                installment_payment: 'תשלומים',
+                loan_payment: 'הלוואה',
+                standing_order: 'הוראת קבע',
+                reserved_payment: 'תשלום שמור',
+                saving: 'חיסכון',
+                credit_card_charge: 'אשראי'
+            };
+
             data.entries.forEach(function (entry) {
-                var rowClass = entry.is_charge ? ' class="hbm-cashflow-charge-row"' : '';
-                html += '<tr' + rowClass + '>' +
+                var isIncome = entry.amount > 0;
+                var balanceClass = entry.running_balance < 0 ? ' hbm-text-danger' : '';
+                var rowClass = isIncome ? 'hbm-cashflow-income-row' : 'hbm-cashflow-charge-row';
+                var typeLabel = entry.type_label || CF_TYPE_LABELS[entry.type] || entry.type || '-';
+                html += '<tr class="' + rowClass + '">' +
                     '<td>' + formatDate(entry.date) + '</td>' +
                     '<td>' + escapeHtml(entry.description) + '</td>' +
-                    '<td>' + escapeHtml(entry.type_label || entry.type || '-') + '</td>' +
-                    '<td><strong>' + formatCurrency(entry.amount) + '</strong></td>' +
-                    '<td>' + formatCurrency(entry.running_balance) + '</td>' +
+                    '<td><span class="hbm-badge ' + (isIncome ? 'hbm-badge-success' : 'hbm-badge-loan') + '">' + typeLabel + '</span></td>' +
+                    '<td class="hbm-amount-cell hbm-text-success">' + (isIncome ? formatCurrency(entry.amount) : '') + '</td>' +
+                    '<td class="hbm-amount-cell hbm-text-danger">' + (!isIncome ? formatCurrency(Math.abs(entry.amount)) : '') + '</td>' +
+                    '<td class="hbm-amount-cell' + balanceClass + '"><strong>' + formatCurrency(entry.running_balance) + '</strong></td>' +
                     '</tr>';
             });
 
             html += '</tbody></table>';
             container.innerHTML = html;
         });
+    }
+
+    // ===================== Expense Categories Page =====================
+    var PIE_COLORS = ['#3b82f6','#ef4444','#10b981','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#f97316','#6366f1','#84cc16','#06b6d4','#e11d48','#a855f7','#22c55e','#eab308','#0ea5e9'];
+
+    function loadExpenseCategoriesPage() {
+        var startEl = document.getElementById('hbm-expcat-start-date');
+        var endEl = document.getElementById('hbm-expcat-end-date');
+        if (!startEl || !endEl) return;
+
+        if (!startEl.value || !endEl.value) {
+            var defaults = getDashboardDateDefaults();
+            startEl.value = defaults.start_date;
+            endEl.value = defaults.end_date;
+        }
+
+        var applyBtn = document.getElementById('hbm-expcat-apply');
+        if (applyBtn) {
+            applyBtn.onclick = function () { loadExpenseCategoriesData(); };
+        }
+        loadExpenseCategoriesData();
+    }
+
+    function loadExpenseCategoriesData() {
+        var startEl = document.getElementById('hbm-expcat-start-date');
+        var endEl = document.getElementById('hbm-expcat-end-date');
+        var chartEl = document.getElementById('hbm-expcat-chart');
+        var legendEl = document.getElementById('hbm-expcat-legend');
+        var detailsPanel = document.getElementById('hbm-expcat-details-panel');
+        if (!chartEl) return;
+
+        chartEl.innerHTML = '<div class="hbm-empty-state"><p>טוען...</p></div>';
+        legendEl.innerHTML = '';
+        if (detailsPanel) detailsPanel.style.display = 'none';
+
+        var params = {};
+        if (startEl && startEl.value) params.start_date = startEl.value;
+        if (endEl && endEl.value) params.end_date = endEl.value;
+
+        apiRequest('dashboard', 'GET', params).then(function (data) {
+            if (!data || data.error || !data.expense_details) {
+                chartEl.innerHTML = '<div class="hbm-empty-state"><p>אין נתונים</p></div>';
+                return;
+            }
+
+            var catTotals = {};
+            var catItems = {};
+            data.expense_details.forEach(function (item) {
+                var cat = item.category || 'other';
+                if (!catTotals[cat]) { catTotals[cat] = 0; catItems[cat] = []; }
+                catTotals[cat] += parseFloat(item.amount) || 0;
+                catItems[cat].push(item);
+            });
+
+            var sorted = Object.keys(catTotals).sort(function (a, b) { return catTotals[b] - catTotals[a]; });
+            var total = sorted.reduce(function (s, k) { return s + catTotals[k]; }, 0);
+
+            if (total === 0) {
+                chartEl.innerHTML = '<div class="hbm-empty-state"><p>אין הוצאות בתקופה זו</p></div>';
+                return;
+            }
+
+            renderPieChart(chartEl, sorted, catTotals, total);
+            renderPieLegend(legendEl, sorted, catTotals, total, catItems);
+        });
+    }
+
+    function renderPieChart(container, categories, totals, total) {
+        var size = 260, cx = size / 2, cy = size / 2, r = 110;
+        var svg = '<svg viewBox="0 0 ' + size + ' ' + size + '" width="' + size + '" height="' + size + '" class="hbm-pie-svg">';
+        var startAngle = -90;
+
+        categories.forEach(function (cat, i) {
+            var pct = totals[cat] / total;
+            var angle = pct * 360;
+            if (angle < 0.5) return;
+            var endAngle = startAngle + angle;
+            var x1 = cx + r * Math.cos(startAngle * Math.PI / 180);
+            var y1 = cy + r * Math.sin(startAngle * Math.PI / 180);
+            var x2 = cx + r * Math.cos(endAngle * Math.PI / 180);
+            var y2 = cy + r * Math.sin(endAngle * Math.PI / 180);
+            var largeArc = angle > 180 ? 1 : 0;
+            var color = PIE_COLORS[i % PIE_COLORS.length];
+
+            if (pct > 0.999) {
+                svg += '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + color + '" data-cat="' + cat + '" class="hbm-pie-slice" style="cursor:pointer"/>';
+            } else {
+                svg += '<path d="M ' + cx + ' ' + cy + ' L ' + x1 + ' ' + y1 + ' A ' + r + ' ' + r + ' 0 ' + largeArc + ' 1 ' + x2 + ' ' + y2 + ' Z" fill="' + color + '" data-cat="' + cat + '" class="hbm-pie-slice" style="cursor:pointer"/>';
+            }
+            startAngle = endAngle;
+        });
+
+        svg += '</svg>';
+        container.innerHTML = svg;
+
+        container.querySelectorAll('.hbm-pie-slice').forEach(function (el) {
+            el.addEventListener('click', function () {
+                var cat = el.getAttribute('data-cat');
+                showCategoryDetails(cat);
+            });
+        });
+    }
+
+    function renderPieLegend(container, categories, totals, total, catItems) {
+        var html = '';
+        categories.forEach(function (cat, i) {
+            var pct = ((totals[cat] / total) * 100).toFixed(1);
+            var color = PIE_COLORS[i % PIE_COLORS.length];
+            var label = CATEGORIES[cat] || cat;
+            html += '<div class="hbm-pie-legend-item" data-cat="' + cat + '" style="cursor:pointer">' +
+                '<span class="hbm-pie-legend-color" style="background:' + color + '"></span>' +
+                '<span class="hbm-pie-legend-label">' + escapeHtml(label) + '</span>' +
+                '<span class="hbm-pie-legend-value">' + formatCurrency(totals[cat]) + ' (' + pct + '%)</span>' +
+                '</div>';
+        });
+        container.innerHTML = html;
+
+        container.querySelectorAll('.hbm-pie-legend-item').forEach(function (el) {
+            el.addEventListener('click', function () {
+                showCategoryDetails(el.getAttribute('data-cat'));
+            });
+        });
+
+        window._hbmExpCatItems = catItems;
+    }
+
+    function showCategoryDetails(cat) {
+        var panel = document.getElementById('hbm-expcat-details-panel');
+        var title = document.getElementById('hbm-expcat-details-title');
+        var tableEl = document.getElementById('hbm-expcat-details-table');
+        if (!panel || !tableEl) return;
+
+        var items = (window._hbmExpCatItems && window._hbmExpCatItems[cat]) || [];
+        var label = CATEGORIES[cat] || cat;
+        if (title) title.textContent = 'הוצאות - ' + label;
+
+        if (items.length === 0) {
+            tableEl.innerHTML = '<div class="hbm-empty-state"><p>אין הוצאות</p></div>';
+            panel.style.display = '';
+            return;
+        }
+
+        var html = '<table class="hbm-table hbm-table-striped"><thead><tr>' +
+            '<th>תיאור</th><th>סוג</th><th>תאריך הורדה</th><th>סכום</th>' +
+            '</tr></thead><tbody>';
+        items.forEach(function (item) {
+            var typeLabel = item.type === 'credit_card' ? '<span class="hbm-badge hbm-badge-info">כרטיס אשראי</span>' :
+                item.type === 'standing_order' ? '<span class="hbm-badge hbm-badge-fixed">הוראת קבע</span>' :
+                '<span class="hbm-badge hbm-badge-default">' + (TYPE_LABELS[item.type] || item.type || '-') + '</span>';
+            html += '<tr>' +
+                '<td><strong>' + escapeHtml(item.title) + '</strong></td>' +
+                '<td>' + typeLabel + '</td>' +
+                '<td>' + (item.deduction_date ? formatDate(item.deduction_date) : '-') + '</td>' +
+                '<td class="hbm-amount-cell">' + formatCurrency(item.amount) + '</td>' +
+                '</tr>';
+        });
+        html += '</tbody></table>';
+        tableEl.innerHTML = html;
+        panel.style.display = '';
     }
 
     // ===================== Credit Card Charges Nav & Page =====================
@@ -2116,7 +2306,7 @@
         if (nextBtn) {
             nextBtn.addEventListener('click', function () {
                 var curEnd = new Date(endEl.value);
-                var nextStart = new Date(curEnd);
+                var nextStart = new Date(curEnd.getFullYear(), curEnd.getMonth(), 21);
                 var nextEnd = new Date(curEnd.getFullYear(), curEnd.getMonth() + 1, 20);
                 startEl.value = formatDateISO(nextStart);
                 endEl.value = formatDateISO(nextEnd);

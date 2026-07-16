@@ -819,41 +819,49 @@ class HBM_API {
 
             if (!empty($expense->credit_card_id) && isset($card_map[$expense->credit_card_id])) {
                 $cid = $expense->credit_card_id;
+                $card = $card_map[$cid];
+                $billing_day = intval($card->billing_day);
+                $deduction_date = $month . '-' . sprintf('%02d', $billing_day);
+                if ($deduction_date < $month_start || $deduction_date > $month_end) continue;
                 if (!isset($cc_groups[$cid])) {
-                    $card = $card_map[$cid];
                     $cc_groups[$cid] = [
                         'type' => 'credit_card',
                         'title' => $card->card_name . ' ***' . $card->last_four,
-                        'billing_day' => intval($card->billing_day),
-                        'deduction_day' => intval($card->billing_day),
+                        'billing_day' => $billing_day,
+                        'deduction_date' => $deduction_date,
                         'amount' => 0,
                     ];
                 }
                 $cc_groups[$cid]['amount'] += $monthly_amount;
             } else {
-                $deduction_day = null;
-                if ($expense->type === 'loan' && $expense->loan_payment_day) {
-                    $deduction_day = intval($expense->loan_payment_day);
+                $deduction_date = null;
+                if ($expense->type === 'one_time') {
+                    $deduction_date = $expense->start_date;
+                } elseif ($expense->type === 'loan' && $expense->loan_payment_day) {
+                    $deduction_date = $month . '-' . sprintf('%02d', intval($expense->loan_payment_day));
                 } elseif ($expense->start_date) {
-                    $deduction_day = intval(date('d', strtotime($expense->start_date)));
+                    $deduction_date = $month . '-' . sprintf('%02d', intval(date('d', strtotime($expense->start_date))));
                 }
+                if ($deduction_date === null || $deduction_date < $month_start || $deduction_date > $month_end) continue;
                 $non_cc_details[] = [
                     'type' => $expense->type,
                     'title' => $expense->title,
                     'amount' => $monthly_amount,
                     'category' => $expense->category,
-                    'deduction_day' => $deduction_day,
+                    'deduction_date' => $deduction_date,
                 ];
             }
         }
 
         foreach ($standing_orders as $order) {
+            $deduction_date = $month . '-' . sprintf('%02d', intval($order->day_of_month));
+            if ($deduction_date < $month_start || $deduction_date > $month_end) continue;
             $non_cc_details[] = [
                 'type' => 'standing_order',
                 'title' => $order->title,
                 'amount' => floatval($order->amount),
                 'category' => $order->category ?? '',
-                'deduction_day' => intval($order->day_of_month),
+                'deduction_date' => $deduction_date,
             ];
         }
 
@@ -1990,30 +1998,36 @@ class HBM_API {
 
             if (!empty($expense->credit_card_id) && isset($biz_card_map[$expense->credit_card_id])) {
                 $cid = $expense->credit_card_id;
+                $card = $biz_card_map[$cid];
+                $billing_day = intval($card->billing_day);
+                $deduction_date = $month . '-' . sprintf('%02d', $billing_day);
+                if ($deduction_date < $month_start || $deduction_date > $month_end) continue;
                 if (!isset($biz_cc_groups[$cid])) {
-                    $card = $biz_card_map[$cid];
                     $biz_cc_groups[$cid] = [
                         'type' => 'credit_card',
                         'title' => $card->card_name . ' ***' . $card->last_four,
-                        'billing_day' => intval($card->billing_day),
-                        'deduction_day' => intval($card->billing_day),
+                        'billing_day' => $billing_day,
+                        'deduction_date' => $deduction_date,
                         'amount' => 0,
                     ];
                 }
                 $biz_cc_groups[$cid]['amount'] += $monthly_amount;
             } else {
-                $deduction_day = null;
-                if ($expense->type === 'loan' && $expense->loan_payment_day) {
-                    $deduction_day = intval($expense->loan_payment_day);
+                $deduction_date = null;
+                if ($expense->type === 'one_time') {
+                    $deduction_date = $expense->start_date;
+                } elseif ($expense->type === 'loan' && $expense->loan_payment_day) {
+                    $deduction_date = $month . '-' . sprintf('%02d', intval($expense->loan_payment_day));
                 } elseif ($expense->start_date) {
-                    $deduction_day = intval(date('d', strtotime($expense->start_date)));
+                    $deduction_date = $month . '-' . sprintf('%02d', intval(date('d', strtotime($expense->start_date))));
                 }
+                if ($deduction_date === null || $deduction_date < $month_start || $deduction_date > $month_end) continue;
                 $biz_non_cc_details[] = [
                     'type' => $expense->type,
                     'title' => $expense->title,
                     'amount' => $monthly_amount,
                     'category' => $expense->category,
-                    'deduction_day' => $deduction_day,
+                    'deduction_date' => $deduction_date,
                 ];
             }
         }
