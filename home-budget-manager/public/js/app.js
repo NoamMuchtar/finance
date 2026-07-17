@@ -27,6 +27,7 @@
     var activeCcChargesIsBiz = false;
     var savingsAccounts = [];
     var currentUser = { id: 0, display_name: '', is_business_user: false };
+    var currentPage = 'dashboard';
 
     var MONTHS_HE = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
     var TYPE_LABELS = { fixed: 'קבועה', installment: 'תשלומים', loan: 'הלוואה', saving: 'חיסכון', one_time: 'חד פעמי' };
@@ -197,6 +198,7 @@
     }
 
     function showPage(page) {
+        currentPage = page;
         document.querySelectorAll('.hbm-page').forEach(function (p) { p.classList.remove('active'); });
         var el = document.getElementById('hbm-page-' + page);
         if (el) el.classList.add('active');
@@ -214,6 +216,21 @@
             case 'cashflow': loadCashFlowPage(); break;
             case 'cc-charges': loadCcChargesPage(); break;
             case 'expense-categories': loadExpenseCategoriesPage(); break;
+            case 'savings-details': loadSavingsDetailsPage(); break;
+        }
+    }
+
+    function refreshRelatedViews() {
+        loadDashboard();
+        switch (currentPage) {
+            case 'expenses': loadExpenses(); break;
+            case 'income': loadIncome(); break;
+            case 'cashflow': loadCashFlowData(); break;
+            case 'cc-charges': loadCcChargesData(); break;
+            case 'allocations': loadAllocations(); break;
+            case 'reserved-payments': loadReservedPayments(); break;
+            case 'collections': loadCollections(); break;
+            case 'biz-dashboard': loadBizDashboard(); break;
             case 'savings-details': loadSavingsDetailsPage(); break;
         }
     }
@@ -1540,8 +1557,7 @@
                 console.log('HBM income save response:', response);
                 if (response && !response.code && (response.id || response.success)) {
                     closeModal();
-                    loadIncome();
-                    loadDashboard();
+                    refreshRelatedViews();
                 } else {
                     var msg = 'שגיאה בשמירת הכנסה';
                     if (response && response.message) msg += ': ' + response.message;
@@ -1824,8 +1840,7 @@
                 apiRequest(endpoint, method, finalPayload).then(function (response) {
                     if (response && (response.id || response.success)) {
                         closeModal();
-                        loadExpenses();
-                        loadDashboard();
+                        refreshRelatedViews();
                     } else {
                         alert('שגיאה בשמירת הוצאה: ' + (response && response.message ? response.message : 'שגיאה לא ידועה'));
                     }
@@ -2046,7 +2061,7 @@
             apiRequest(endpoint, method, payload).then(function (response) {
                 if (response && response.id) {
                     closeModal();
-                    loadStandingOrders();
+                    refreshRelatedViews();
                 }
             });
         });
@@ -2055,7 +2070,7 @@
     function deleteStandingOrder(id) {
         if (!confirm('האם למחוק הוראת קבע זו?')) return;
         apiRequest('standing-orders/' + id, 'DELETE').then(function () {
-            loadStandingOrders();
+            refreshRelatedViews();
         });
     }
 
@@ -2145,7 +2160,7 @@
             apiRequest(endpoint, method, payload).then(function (response) {
                 if (response && response.id) {
                     closeModal();
-                    loadReservedPayments();
+                    refreshRelatedViews();
                 }
             });
         });
@@ -2153,16 +2168,14 @@
 
     function toggleReservedPaymentPaid(id, isPaid) {
         apiRequest('reserved-payments/' + id, 'PUT', { is_paid: isPaid }).then(function () {
-            loadReservedPayments();
-            loadDashboard();
+            refreshRelatedViews();
         });
     }
 
     function deleteReservedPayment(id) {
         if (!confirm('האם למחוק תשלום שמור זה?')) return;
         apiRequest('reserved-payments/' + id, 'DELETE').then(function () {
-            loadReservedPayments();
-            loadDashboard();
+            refreshRelatedViews();
         });
     }
 
@@ -2287,7 +2300,7 @@
             apiRequest(endpoint, method, payload).then(function (response) {
                 if (response && response.id) {
                     closeModal();
-                    loadCollections();
+                    refreshRelatedViews();
                 }
             });
         });
@@ -2295,14 +2308,14 @@
 
     function updateCollectionStatus(id, status) {
         apiRequest('collections/' + id, 'PUT', { status: status }).then(function () {
-            loadCollections();
+            refreshRelatedViews();
         });
     }
 
     function deleteCollection(id) {
         if (!confirm('האם למחוק רשומת גביה זו?')) return;
         apiRequest('collections/' + id, 'DELETE').then(function () {
-            loadCollections();
+            refreshRelatedViews();
         });
     }
 
@@ -2441,8 +2454,7 @@
             apiRequest(endpoint, method, payload).then(function (response) {
                 if (response && response.id) {
                     closeModal();
-                    loadAllocations();
-                    loadDashboard();
+                    refreshRelatedViews();
                 }
             });
         });
@@ -2451,8 +2463,7 @@
     function deleteAllocation(id) {
         if (!confirm('האם למחוק הקצאה זו?')) return;
         apiRequest('budget-allocations/' + id, 'DELETE').then(function () {
-            loadAllocations();
-            loadDashboard();
+            refreshRelatedViews();
         });
     }
 
@@ -3308,8 +3319,7 @@
                         resultDiv.innerHTML = msg;
                         resultDiv.style.display = 'block';
                         if (result.imported > 0) {
-                            loadExpenses();
-                            loadDashboard();
+                            refreshRelatedViews();
                         }
                     } else {
                         resultDiv.innerHTML = '<p style="color:red;">שגיאה בייבוא</p>';
@@ -3523,8 +3533,7 @@
                     resultDiv.innerHTML = msg;
                     resultDiv.style.display = 'block';
                     if (result.imported > 0) {
-                        loadExpenses();
-                        loadDashboard();
+                        refreshRelatedViews();
                     }
                 } else {
                     resultDiv.innerHTML = '<p style="color:red;">שגיאה בייבוא: ' + escapeHtml((result && result.message) || 'שגיאה לא ידועה') + '</p>';
@@ -3651,7 +3660,7 @@
         },
         deleteIncome: function (id) {
             if (!confirm('האם למחוק הכנסה זו?')) return;
-            apiRequest('income/' + id, 'DELETE').then(function () { loadIncome(); loadDashboard(); });
+            apiRequest('income/' + id, 'DELETE').then(function () { refreshRelatedViews(); });
         },
         editExpense: function (id) {
             var range = getMonthDateRange(currentMonth);
@@ -3662,7 +3671,7 @@
         },
         deleteExpense: function (id) {
             if (!confirm('האם למחוק הוצאה זו?')) return;
-            apiRequest('expenses/' + id, 'DELETE').then(function () { loadExpenses(); loadDashboard(); });
+            apiRequest('expenses/' + id, 'DELETE').then(function () { refreshRelatedViews(); });
         },
         deleteCategory: function (key) {
             if (!confirm('האם למחוק קטגוריה זו?')) return;
