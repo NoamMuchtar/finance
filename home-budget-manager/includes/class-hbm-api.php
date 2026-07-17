@@ -2628,6 +2628,7 @@ class HBM_API {
         $query = $wpdb->prepare(
             "SELECT * FROM {$wpdb->prefix}hbm_expenses
              WHERE credit_card_id = %d
+             AND (payment_method IS NULL OR payment_method = 'credit')
              AND (
                  (start_date <= %s AND (end_date IS NULL OR end_date >= %s))
                  OR cc_billing_month = %s
@@ -2865,6 +2866,7 @@ class HBM_API {
 
         $query = "SELECT * FROM {$wpdb->prefix}hbm_expenses
              WHERE credit_card_id = %d
+             AND (payment_method IS NULL OR payment_method = 'credit')
              AND (
                  (start_date <= %s AND (end_date IS NULL OR end_date >= %s))
                  OR cc_billing_month = %s
