@@ -2654,12 +2654,18 @@ class HBM_API {
             }
 
             if ($exp->type === 'installment') {
-                if (!empty($exp->current_installment)) {
-                    $current_installment = intval($exp->current_installment);
+                $total_inst = intval($exp->total_installments);
+                if ($has_explicit_billing) {
+                    $current_installment = !empty($exp->current_installment) ? intval($exp->current_installment) : 1;
+                } elseif (!empty($exp->current_installment)) {
+                    $months_passed = self::months_between($exp->start_date, $month_start);
+                    $purchase_day = intval(date('d', strtotime($exp->start_date)));
+                    $current_installment = ($purchase_day >= $billing_day) ? $months_passed : $months_passed + 1;
+                    if ($current_installment < 1 || $current_installment > $total_inst) continue;
                 } else {
                     $months_passed = self::months_between($exp->start_date, $month_start);
                     $current_installment = $months_passed + 1;
-                    if ($current_installment < 1 || $current_installment > intval($exp->total_installments)) continue;
+                    if ($current_installment < 1 || $current_installment > $total_inst) continue;
                 }
                 $display_amount = !empty($exp->charged_amount) ? floatval($exp->charged_amount) : floatval($exp->installment_amount ?: ($exp->amount / $exp->total_installments));
                 $charges[] = [
@@ -2887,10 +2893,16 @@ class HBM_API {
             if ($exp->type === 'one_time' || $exp->type === 'fixed') {
                 $total += !empty($exp->charged_amount) ? floatval($exp->charged_amount) : floatval($exp->amount);
             } elseif ($exp->type === 'installment') {
-                if (empty($exp->current_installment)) {
+                $total_inst = intval($exp->total_installments);
+                if (!$has_explicit_billing && !empty($exp->current_installment)) {
+                    $months_passed = self::months_between($exp->start_date, $month_start);
+                    $purchase_day = intval(date('d', strtotime($exp->start_date)));
+                    $current = ($purchase_day >= $billing_day) ? $months_passed : $months_passed + 1;
+                    if ($current < 1 || $current > $total_inst) continue;
+                } elseif (!$has_explicit_billing && empty($exp->current_installment)) {
                     $months_passed = self::months_between($exp->start_date, $month_start);
                     $current = $months_passed + 1;
-                    if ($current < 1 || $current > intval($exp->total_installments)) continue;
+                    if ($current < 1 || $current > $total_inst) continue;
                 }
                 $total += !empty($exp->charged_amount) ? floatval($exp->charged_amount) : floatval($exp->installment_amount ?: ($exp->amount / $exp->total_installments));
             } else {
