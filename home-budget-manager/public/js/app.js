@@ -598,9 +598,9 @@
             '<input type="text" name="bank_name" value="' + escapeHtml(acct.bank_name) + '" required></div>' +
             '<div class="hbm-form-row">' +
             '<div class="hbm-form-group"><label>מסגרת אשראי</label>' +
-            '<input type="number" name="credit_limit" value="' + (acct.credit_limit || 0) + '"></div>' +
+            '<input type="number" step="0.01" name="credit_limit" value="' + (acct.credit_limit || 0) + '"></div>' +
             '<div class="hbm-form-group"><label>יתרה התחלתית</label>' +
-            '<input type="number" name="initial_balance" value="' + (acct.initial_balance || 0) + '"></div>' +
+            '<input type="number" step="0.01" name="initial_balance" value="' + (acct.initial_balance || 0) + '"></div>' +
             '</div>' +
             '<div class="hbm-form-actions">' +
             '<button type="submit" class="hbm-btn hbm-btn-primary">עדכן</button>' +
@@ -1514,7 +1514,7 @@
             '<input type="text" name="title" value="' + escapeHtml(editData ? editData.title : '') + '" required></div>' +
             '<div class="hbm-form-row">' +
             '<div class="hbm-form-group"><label>סכום</label>' +
-            '<input type="number" name="amount" value="' + (editData ? editData.amount : '') + '" required></div>' +
+            '<input type="number" step="0.01" name="amount" value="' + (editData ? editData.amount : '') + '" required></div>' +
             '<div class="hbm-form-group"><label>מקור</label>' +
             '<input type="text" name="source" value="' + escapeHtml(editData ? editData.source || '' : '') + '"></div>' +
             '</div>' +
@@ -2764,7 +2764,7 @@
             '<input type="text" name="title" value="' + escapeHtml(editData ? editData.title : '') + '" required></div>' +
             '<div class="hbm-form-row">' +
             '<div class="hbm-form-group"><label>סכום</label>' +
-            '<input type="number" name="amount" value="' + (editData ? editData.amount : '') + '" required></div>' +
+            '<input type="number" step="0.01" name="amount" value="' + (editData ? editData.amount : '') + '" required></div>' +
             '<div class="hbm-form-group"><label>מקור</label>' +
             '<input type="text" name="source" value="' + escapeHtml(editData ? editData.source || '' : '') + '"></div>' +
             '</div>' +
@@ -3114,9 +3114,9 @@
             '<input type="text" name="bank_name" value="' + escapeHtml(acct.bank_name) + '" required></div>' +
             '<div class="hbm-form-row">' +
             '<div class="hbm-form-group"><label>מסגרת אשראי</label>' +
-            '<input type="number" name="credit_limit" value="' + (acct.credit_limit || 0) + '"></div>' +
+            '<input type="number" step="0.01" name="credit_limit" value="' + (acct.credit_limit || 0) + '"></div>' +
             '<div class="hbm-form-group"><label>יתרה התחלתית</label>' +
-            '<input type="number" name="initial_balance" value="' + (acct.initial_balance || 0) + '"></div>' +
+            '<input type="number" step="0.01" name="initial_balance" value="' + (acct.initial_balance || 0) + '"></div>' +
             '</div>' +
             '<div class="hbm-form-actions">' +
             '<button type="submit" class="hbm-btn hbm-btn-primary">עדכן</button>' +
