@@ -77,7 +77,8 @@ class Home_Budget_Manager {
 
     public function enqueue_public_assets() {
         wp_enqueue_style('hbm-public', HBM_PLUGIN_URL . 'public/css/style.css', [], HBM_VERSION);
-        wp_enqueue_script('hbm-public', HBM_PLUGIN_URL . 'public/js/app.js', [], HBM_VERSION, true);
+        wp_enqueue_script('xlsx-mini', HBM_PLUGIN_URL . 'public/js/xlsx.mini.min.js', [], '0.20.0', true);
+        wp_enqueue_script('hbm-public', HBM_PLUGIN_URL . 'public/js/app.js', ['xlsx-mini'], HBM_VERSION, true);
         wp_localize_script('hbm-public', 'hbmData', [
             'apiUrl' => rest_url('hbm/v1/'),
             'nonce' => wp_create_nonce('wp_rest'),

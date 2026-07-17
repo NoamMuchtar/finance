@@ -38,7 +38,9 @@ class HBM_Database {
             description varchar(500) DEFAULT '',
             category varchar(100) NOT NULL,
             amount decimal(12,2) NOT NULL,
+            charged_amount decimal(12,2) DEFAULT NULL,
             total_installments int DEFAULT NULL,
+            current_installment int DEFAULT NULL,
             remaining_installments int DEFAULT NULL,
             installment_amount decimal(12,2) DEFAULT NULL,
             loan_end_date date DEFAULT NULL,
@@ -52,13 +54,16 @@ class HBM_Database {
             loan_payment_day int DEFAULT NULL,
             is_business tinyint(1) DEFAULT 0,
             allocation_id bigint(20) unsigned DEFAULT NULL,
+            saving_account_id bigint(20) unsigned DEFAULT NULL,
+            voucher_number varchar(50) DEFAULT NULL,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY user_id (user_id),
             KEY type (type),
             KEY category (category),
-            KEY start_date (start_date)
+            KEY start_date (start_date),
+            KEY voucher_number (voucher_number)
         ) $charset_collate;";
 
         $tables[] = "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}hbm_budget_allocations (
@@ -293,6 +298,24 @@ class HBM_Database {
         $col = $wpdb->get_results("SHOW COLUMNS FROM {$table} LIKE 'saving_account_id'");
         if (empty($col)) {
             $wpdb->query("ALTER TABLE {$table} ADD COLUMN saving_account_id bigint(20) unsigned DEFAULT NULL AFTER allocation_id");
+        }
+
+        // Add charged_amount to expenses if not exists
+        $col = $wpdb->get_results("SHOW COLUMNS FROM {$table} LIKE 'charged_amount'");
+        if (empty($col)) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN charged_amount decimal(12,2) DEFAULT NULL AFTER amount");
+        }
+
+        // Add current_installment to expenses if not exists
+        $col = $wpdb->get_results("SHOW COLUMNS FROM {$table} LIKE 'current_installment'");
+        if (empty($col)) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN current_installment int DEFAULT NULL AFTER total_installments");
+        }
+
+        // Add voucher_number to expenses if not exists
+        $col = $wpdb->get_results("SHOW COLUMNS FROM {$table} LIKE 'voucher_number'");
+        if (empty($col)) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN voucher_number varchar(50) DEFAULT NULL AFTER saving_account_id");
         }
 
         // Alter budget_allocations: add label if not exists

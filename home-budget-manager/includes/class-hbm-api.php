@@ -184,6 +184,11 @@ class HBM_API {
             ['methods' => 'POST', 'callback' => [__CLASS__, 'import_expenses_csv'], 'permission_callback' => [__CLASS__, 'check_auth']],
         ]);
 
+        // Import Credit Card Excel
+        register_rest_route($namespace, '/import-cc-excel', [
+            ['methods' => 'POST', 'callback' => [__CLASS__, 'import_cc_excel'], 'permission_callback' => [__CLASS__, 'check_auth']],
+        ]);
+
         // Current User Info
         register_rest_route($namespace, '/current-user', [
             ['methods' => 'GET', 'callback' => [__CLASS__, 'get_current_user_info'], 'permission_callback' => [__CLASS__, 'check_auth']],
@@ -582,8 +587,10 @@ class HBM_API {
         $valid_payments = ['credit', 'bank_transfer', 'check', 'cash'];
         $categories = get_option('hbm_categories', []);
         $is_business = intval($params['is_business'] ?? 0);
+        $skip_duplicates = !empty($params['skip_duplicates']);
 
         $imported = 0;
+        $skipped = 0;
         $errors = [];
 
         foreach ($params['rows'] as $i => $row) {
@@ -595,6 +602,7 @@ class HBM_API {
             $start_date = sanitize_text_field(trim($row['start_date'] ?? ''));
             $payee = sanitize_text_field(trim($row['payee'] ?? ''));
             $description = sanitize_text_field(trim($row['description'] ?? ''));
+            $voucher_number = sanitize_text_field(trim($row['voucher_number'] ?? ''));
 
             if (empty($title)) {
                 $errors[] = 'שורה ' . $row_num . ': חסר שם הוצאה';
@@ -613,12 +621,23 @@ class HBM_API {
                 continue;
             }
             if (!empty($category) && !isset($categories[$category])) {
-                $errors[] = 'שורה ' . $row_num . ': קטגוריה לא קיימת "' . $category . '"';
-                continue;
+                $categories[$category] = $category;
+                update_option('hbm_categories', $categories);
             }
             if (empty($start_date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $start_date)) {
                 $errors[] = 'שורה ' . $row_num . ': תאריך לא תקין (נדרש YYYY-MM-DD)';
                 continue;
+            }
+
+            if ($skip_duplicates && !empty($voucher_number)) {
+                $existing = $wpdb->get_var($wpdb->prepare(
+                    "SELECT id FROM {$wpdb->prefix}hbm_expenses WHERE voucher_number = %s LIMIT 1",
+                    $voucher_number
+                ));
+                if ($existing) {
+                    $skipped++;
+                    continue;
+                }
             }
 
             $data = [
@@ -632,6 +651,15 @@ class HBM_API {
                 'is_recurring' => 0,
                 'start_date' => $start_date,
             ];
+
+            $charged_amount = isset($row['charged_amount']) ? floatval($row['charged_amount']) : null;
+            if ($charged_amount !== null && $charged_amount > 0) {
+                $data['charged_amount'] = $charged_amount;
+            }
+
+            if (!empty($voucher_number)) {
+                $data['voucher_number'] = $voucher_number;
+            }
 
             if ($is_business) {
                 $data['is_business'] = 1;
@@ -662,9 +690,17 @@ class HBM_API {
                     $total = intval($row['total_installments'] ?? 0);
                     if ($total <= 0) $total = 1;
                     $data['total_installments'] = $total;
-                    $data['remaining_installments'] = $total;
+                    $current = intval($row['current_installment'] ?? 0);
+                    $data['current_installment'] = $current > 0 ? $current : 1;
+                    $data['remaining_installments'] = $total - ($data['current_installment'] - 1);
                     $inst_amount = floatval($row['installment_amount'] ?? 0);
-                    $data['installment_amount'] = $inst_amount > 0 ? $inst_amount : ($amount / $total);
+                    if ($inst_amount > 0) {
+                        $data['installment_amount'] = $inst_amount;
+                    } elseif ($charged_amount !== null && $charged_amount > 0) {
+                        $data['installment_amount'] = $charged_amount;
+                    } else {
+                        $data['installment_amount'] = $amount / $total;
+                    }
                     $data['end_date'] = date('Y-m-d', strtotime($start_date . " +{$total} months"));
                     break;
 
@@ -681,7 +717,7 @@ class HBM_API {
                     break;
             }
 
-            if ($type === 'one_time' && empty($data['payment_method'])) {
+            if (($type === 'one_time' || $type === 'fixed') && empty($data['payment_method'])) {
                 $data['payment_method'] = $credit_card_id ? 'credit' : 'cash';
             }
 
@@ -693,11 +729,136 @@ class HBM_API {
             }
         }
 
-        return rest_ensure_response([
+        $response = [
             'imported' => $imported,
             'total' => count($params['rows']),
             'errors' => $errors,
-        ]);
+        ];
+        if ($skipped > 0) {
+            $response['skipped'] = $skipped;
+        }
+
+        return rest_ensure_response($response);
+    }
+
+    public static function import_cc_excel($request) {
+        global $wpdb;
+        $user_id = get_current_user_id();
+
+        $params = $request->get_json_params();
+        if (empty($params) || empty($params['transactions']) || !is_array($params['transactions'])) {
+            return new WP_Error('missing_data', 'חסרים נתונים לייבוא', ['status' => 400]);
+        }
+
+        $credit_card_id = intval($params['credit_card_id'] ?? 0);
+        if (!$credit_card_id) {
+            return new WP_Error('missing_card', 'חובה לבחור כרטיס אשראי', ['status' => 400]);
+        }
+
+        $skip_duplicates = !empty($params['skip_duplicates']);
+        $categories = get_option('hbm_categories', []);
+
+        $imported = 0;
+        $skipped = 0;
+        $errors = [];
+
+        foreach ($params['transactions'] as $i => $tx) {
+            $row_num = $i + 1;
+            $payee = sanitize_text_field(trim($tx['payee'] ?? ''));
+            $original_amount = floatval($tx['original_amount'] ?? 0);
+            $charged_amount = floatval($tx['charged_amount'] ?? 0);
+            $date = sanitize_text_field(trim($tx['date'] ?? ''));
+            $voucher = sanitize_text_field(trim($tx['voucher_number'] ?? ''));
+            $details = sanitize_text_field(trim($tx['details'] ?? ''));
+            $category = sanitize_text_field(trim($tx['category'] ?? ''));
+            $description = sanitize_text_field(trim($tx['description'] ?? ''));
+
+            if (empty($payee)) {
+                $errors[] = 'שורה ' . $row_num . ': חסר שם בית עסק';
+                continue;
+            }
+            if ($original_amount <= 0 && $charged_amount <= 0) {
+                $errors[] = 'שורה ' . $row_num . ': סכום חייב להיות גדול מ-0';
+                continue;
+            }
+            if (empty($date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+                $errors[] = 'שורה ' . $row_num . ': תאריך לא תקין';
+                continue;
+            }
+
+            if ($skip_duplicates && !empty($voucher)) {
+                $existing = $wpdb->get_var($wpdb->prepare(
+                    "SELECT id FROM {$wpdb->prefix}hbm_expenses WHERE voucher_number = %s LIMIT 1",
+                    $voucher
+                ));
+                if ($existing) {
+                    $skipped++;
+                    continue;
+                }
+            }
+
+            $current_installment = null;
+            $total_installments = null;
+            $type = 'one_time';
+
+            if (preg_match('/תשלום\s+(\d+)\s+מתוך\s+(\d+)/', $details, $m)) {
+                $current_installment = intval($m[1]);
+                $total_installments = intval($m[2]);
+                $type = 'installment';
+            } elseif (preg_match('/הוראת קבע/', $details)) {
+                $type = 'fixed';
+            }
+
+            if (!empty($category) && !isset($categories[$category])) {
+                $categories[$category] = $category;
+                update_option('hbm_categories', $categories);
+            }
+
+            $data = [
+                'user_id' => $user_id,
+                'type' => $type,
+                'title' => $payee,
+                'payee' => $payee,
+                'description' => $description,
+                'category' => $category,
+                'amount' => $original_amount > 0 ? $original_amount : $charged_amount,
+                'charged_amount' => $charged_amount > 0 ? $charged_amount : null,
+                'is_recurring' => $type === 'fixed' ? 1 : 0,
+                'start_date' => $date,
+                'credit_card_id' => $credit_card_id,
+                'payment_method' => 'credit',
+            ];
+
+            if (!empty($voucher)) {
+                $data['voucher_number'] = $voucher;
+            }
+
+            if ($type === 'installment') {
+                $data['total_installments'] = $total_installments;
+                $data['current_installment'] = $current_installment;
+                $data['remaining_installments'] = $total_installments - $current_installment + 1;
+                $data['installment_amount'] = $charged_amount > 0 ? $charged_amount : ($original_amount / $total_installments);
+                $data['end_date'] = date('Y-m-d', strtotime($date . " +{$total_installments} months"));
+            }
+
+            $result = $wpdb->insert("{$wpdb->prefix}hbm_expenses", $data);
+            if ($result === false) {
+                $errors[] = 'שורה ' . $row_num . ': שגיאת מסד נתונים - ' . $wpdb->last_error;
+            } else {
+                $imported++;
+            }
+        }
+
+        $response = [
+            'imported' => $imported,
+            'total' => count($params['transactions']),
+            'errors' => $errors,
+        ];
+        if ($skipped > 0) {
+            $response['skipped'] = $skipped;
+        }
+
+        return rest_ensure_response($response);
     }
 
     public static function update_expense($request) {

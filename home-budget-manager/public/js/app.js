@@ -3114,7 +3114,7 @@
             '<div class="hbm-import-instructions" style="background:#f8f9fa;padding:12px;border-radius:8px;margin-bottom:16px;font-size:13px;max-height:300px;overflow-y:auto;">' +
             '<h4 style="margin:0 0 8px;">הנחיות למילוי הקובץ</h4>' +
             '<p><strong>עמודות חובה:</strong> title (שם), amount (סכום), type (סוג), category (קטגוריה), start_date (תאריך)</p>' +
-            '<p><strong>עמודות אופציונליות:</strong> payee (למי), description (תיאור), credit_card_id, bank_account_id, payment_method, total_installments, installment_amount, monthly_return, loan_end_date, loan_payment_day</p>' +
+            '<p><strong>עמודות אופציונליות:</strong> payee (למי), description (תיאור), credit_card_id, bank_account_id, payment_method, total_installments, current_installment, installment_amount, charged_amount, voucher_number, monthly_return, loan_end_date, loan_payment_day</p>' +
             '<hr style="margin:8px 0;">' +
             '<p><strong>סוגי הוצאה (type):</strong></p>' +
             '<ul style="margin:4px 0;padding-right:20px;">' +
@@ -3284,6 +3284,249 @@
         URL.revokeObjectURL(link.href);
     }
 
+    function showImportCreditCardExcel() {
+        var ccList = creditCards.map(function (c) {
+            return '<option value="' + c.id + '">' + (c.card_name || '') + ' **** ' + c.last_four + '</option>';
+        }).join('');
+
+        var html = '<div class="hbm-import-container" style="direction:rtl;text-align:right;">' +
+            '<div style="margin-bottom:16px;">' +
+            '<h4 style="margin:0 0 8px;">ייבוא עסקאות מקובץ Excel של חברת האשראי</h4>' +
+            '<p style="font-size:13px;color:#666;">העלה את קובץ ה-Excel שהורדת מאתר חברת האשראי. המערכת תזהה אוטומטית את מבנה הקובץ.</p>' +
+            '</div>' +
+            '<div style="margin-bottom:12px;">' +
+            '<label style="display:block;margin-bottom:4px;font-weight:bold;">כרטיס אשראי:</label>' +
+            '<select id="hbm-cc-excel-card" class="hbm-input" style="width:100%;">' +
+            '<option value="">בחר כרטיס...</option>' + ccList + '</select>' +
+            '</div>' +
+            '<div style="margin-bottom:12px;">' +
+            '<label style="display:block;margin-bottom:4px;font-weight:bold;">בחר קובץ Excel (.xlsx):</label>' +
+            '<input type="file" id="hbm-cc-excel-file" accept=".xlsx,.xls" style="width:100%;">' +
+            '</div>' +
+            '<div style="margin-bottom:8px;">' +
+            '<label style="font-size:13px;"><input type="checkbox" id="hbm-cc-skip-duplicates" checked> דלג על עסקאות כפולות (לפי מספר שובר)</label>' +
+            '</div>' +
+            '<div id="hbm-cc-excel-preview" style="display:none;margin-bottom:12px;"></div>' +
+            '<div id="hbm-cc-excel-result" style="display:none;margin-bottom:12px;"></div>' +
+            '<div class="hbm-form-actions">' +
+            '<button class="hbm-btn hbm-btn-primary" id="hbm-cc-excel-submit" disabled>ייבא עסקאות</button>' +
+            '<button class="hbm-btn hbm-btn-ghost" onclick="hbmApp.closeModal()">ביטול</button>' +
+            '</div>' +
+            '</div>';
+
+        openModal('ייבוא עסקאות אשראי מ-Excel', html);
+
+        var fileInput = document.getElementById('hbm-cc-excel-file');
+        var submitBtn = document.getElementById('hbm-cc-excel-submit');
+        var parsedTransactions = [];
+
+        fileInput.addEventListener('change', function () {
+            var file = fileInput.files[0];
+            var cardId = document.getElementById('hbm-cc-excel-card').value;
+            if (!file) return;
+            if (!cardId) {
+                document.getElementById('hbm-cc-excel-preview').innerHTML = '<p style="color:red;">יש לבחור כרטיס אשראי קודם</p>';
+                document.getElementById('hbm-cc-excel-preview').style.display = 'block';
+                return;
+            }
+
+            var reader = new FileReader();
+            reader.onload = function (e) {
+                try {
+                    var data = new Uint8Array(e.target.result);
+                    var workbook = XLSX.read(data, { type: 'array' });
+                    var sheet = workbook.Sheets[workbook.SheetNames[0]];
+                    var rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+                    parsedTransactions = parseCreditCardExcel(rows);
+
+                    var preview = document.getElementById('hbm-cc-excel-preview');
+                    if (parsedTransactions.length === 0) {
+                        preview.innerHTML = '<p style="color:red;">לא נמצאו עסקאות בקובץ. ודא שזהו קובץ Excel מחברת האשראי.</p>';
+                        preview.style.display = 'block';
+                        submitBtn.disabled = true;
+                        return;
+                    }
+
+                    var totalCharged = parsedTransactions.reduce(function (sum, t) { return sum + (t.charged_amount || t.original_amount); }, 0);
+                    var installmentCount = parsedTransactions.filter(function (t) { return t.type === 'installment'; }).length;
+                    var fixedCount = parsedTransactions.filter(function (t) { return t.type === 'fixed'; }).length;
+
+                    preview.innerHTML = '<p style="color:green;font-weight:bold;">נמצאו ' + parsedTransactions.length + ' עסקאות | סה"כ חיוב: ₪' + totalCharged.toFixed(2) + '</p>' +
+                        '<p style="font-size:12px;color:#666;">רגילות: ' + (parsedTransactions.length - installmentCount - fixedCount) + ' | תשלומים: ' + installmentCount + ' | הוראות קבע: ' + fixedCount + '</p>' +
+                        '<div style="max-height:250px;overflow:auto;font-size:12px;margin-top:8px;">' +
+                        '<table class="hbm-table"><thead><tr><th>תאריך</th><th>בית עסק</th><th>סכום מקורי</th><th>סכום חיוב</th><th>סוג</th><th>קטגוריה</th></tr></thead><tbody>' +
+                        parsedTransactions.map(function (t, i) {
+                            var typeLabel = t.type === 'installment' ? 'תשלום ' + t.current_installment + '/' + t.total_installments :
+                                t.type === 'fixed' ? 'הו"ק' : 'רגיל';
+                            return '<tr><td>' + t.date + '</td><td>' + escapeHtml(t.payee) + '</td><td>₪' + t.original_amount.toFixed(2) + '</td><td>₪' + (t.charged_amount || t.original_amount).toFixed(2) + '</td><td>' + typeLabel + '</td>' +
+                                '<td><input type="text" value="' + escapeHtml(t.category || '') + '" data-idx="' + i + '" class="hbm-cc-cat-input hbm-input" style="width:80px;font-size:11px;padding:2px 4px;" placeholder="קטגוריה"></td></tr>';
+                        }).join('') +
+                        '</tbody></table></div>';
+                    preview.style.display = 'block';
+                    submitBtn.disabled = false;
+                } catch (err) {
+                    document.getElementById('hbm-cc-excel-preview').innerHTML = '<p style="color:red;">שגיאה בקריאת הקובץ: ' + escapeHtml(err.message) + '</p>';
+                    document.getElementById('hbm-cc-excel-preview').style.display = 'block';
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        submitBtn.addEventListener('click', function () {
+            var cardId = document.getElementById('hbm-cc-excel-card').value;
+            if (!cardId || parsedTransactions.length === 0) return;
+
+            var catInputs = document.querySelectorAll('.hbm-cc-cat-input');
+            catInputs.forEach(function (inp) {
+                var idx = parseInt(inp.getAttribute('data-idx'));
+                if (parsedTransactions[idx]) {
+                    parsedTransactions[idx].category = inp.value.trim();
+                }
+            });
+
+            var skipDuplicates = document.getElementById('hbm-cc-skip-duplicates').checked;
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'מייבא...';
+
+            apiRequest('import-cc-excel', 'POST', {
+                credit_card_id: cardId,
+                transactions: parsedTransactions,
+                skip_duplicates: skipDuplicates
+            }).then(function (result) {
+                var resultDiv = document.getElementById('hbm-cc-excel-result');
+                if (result && !result.error) {
+                    var msg = '<p style="color:green;font-weight:bold;">יובאו בהצלחה: ' + result.imported + ' מתוך ' + result.total + '</p>';
+                    if (result.skipped > 0) {
+                        msg += '<p style="color:orange;">דולגו (כפולות): ' + result.skipped + '</p>';
+                    }
+                    if (result.errors && result.errors.length > 0) {
+                        msg += '<div style="color:red;font-size:12px;max-height:100px;overflow:auto;"><ul>' +
+                            result.errors.map(function (e) { return '<li>' + escapeHtml(e) + '</li>'; }).join('') +
+                            '</ul></div>';
+                    }
+                    resultDiv.innerHTML = msg;
+                    resultDiv.style.display = 'block';
+                    if (result.imported > 0) {
+                        loadExpenses();
+                        loadDashboard();
+                    }
+                } else {
+                    resultDiv.innerHTML = '<p style="color:red;">שגיאה בייבוא: ' + escapeHtml((result && result.message) || 'שגיאה לא ידועה') + '</p>';
+                    resultDiv.style.display = 'block';
+                }
+                submitBtn.textContent = 'ייבא עסקאות';
+                submitBtn.disabled = false;
+            });
+        });
+    }
+
+    function parseCreditCardExcel(rows) {
+        var headerRowIdx = -1;
+        var colMap = {};
+
+        for (var i = 0; i < rows.length; i++) {
+            var row = rows[i];
+            if (!row || row.length < 5) continue;
+            var first = String(row[0] || '').trim();
+            if (first === 'תאריך רכישה') {
+                headerRowIdx = i;
+                for (var c = 0; c < row.length; c++) {
+                    var h = String(row[c] || '').trim();
+                    if (h === 'תאריך רכישה') colMap.date = c;
+                    else if (h === 'שם בית עסק') colMap.payee = c;
+                    else if (h === 'סכום עסקה') colMap.originalAmount = c;
+                    else if (h === 'סכום חיוב') colMap.chargedAmount = c;
+                    else if (h === "מס' שובר") colMap.voucher = c;
+                    else if (h === 'פירוט נוסף') colMap.details = c;
+                }
+                break;
+            }
+        }
+
+        if (headerRowIdx === -1) return [];
+
+        var seenVouchers = {};
+        var transactions = [];
+
+        function parseSection(startIdx) {
+            for (var i = startIdx; i < rows.length; i++) {
+                var row = rows[i];
+                if (!row) continue;
+
+                var firstCell = String(row[0] || '').trim();
+                if (/^(סה"כ|עסקאות|תנאים משפטיים|ביצעת)/.test(firstCell)) break;
+                if (firstCell === 'תאריך רכישה') break;
+                if (!row.length || row.length < 3) continue;
+
+                var dateStr = firstCell;
+                if (!dateStr || !/^\d{2}\.\d{2}\.\d{2,4}$/.test(dateStr)) continue;
+
+                var payee = String(row[colMap.payee] || '').trim();
+                if (!payee) continue;
+
+                var origAmt = parseFloat(row[colMap.originalAmount]) || 0;
+                var chargedAmt = parseFloat(row[colMap.chargedAmount]) || 0;
+                var voucher = String(row[colMap.voucher] || '').trim();
+                var details = String(row[colMap.details] || '').replace(/\n/g, ' ').trim();
+
+                if (voucher && seenVouchers[voucher]) continue;
+                if (voucher) seenVouchers[voucher] = true;
+
+                var parts = dateStr.split('.');
+                var year = parts[2].length === 2 ? '20' + parts[2] : parts[2];
+                var isoDate = year + '-' + parts[1] + '-' + parts[0];
+
+                var type = 'one_time';
+                var currentInstallment = null;
+                var totalInstallments = null;
+
+                var installMatch = details.match(/תשלום\s+(\d+)\s+מתוך\s+(\d+)/);
+                if (installMatch) {
+                    currentInstallment = parseInt(installMatch[1]);
+                    totalInstallments = parseInt(installMatch[2]);
+                    type = 'installment';
+                } else if (/הוראת קבע/.test(details)) {
+                    type = 'fixed';
+                }
+
+                var tx = {
+                    date: isoDate,
+                    payee: payee,
+                    original_amount: origAmt,
+                    charged_amount: chargedAmt,
+                    voucher_number: voucher,
+                    details: details,
+                    type: type,
+                    category: '',
+                    description: ''
+                };
+
+                if (type === 'installment') {
+                    tx.current_installment = currentInstallment;
+                    tx.total_installments = totalInstallments;
+                }
+
+                transactions.push(tx);
+            }
+        }
+
+        parseSection(headerRowIdx + 1);
+
+        // Parse additional sections (out-of-cycle, etc.)
+        for (var i = headerRowIdx + 1; i < rows.length; i++) {
+            var row = rows[i];
+            if (!row) continue;
+            var first = String(row[0] || '').trim();
+            if (first === 'תאריך רכישה') {
+                parseSection(i + 1);
+            }
+        }
+
+        return transactions;
+    }
+
     window.hbmApp = {
         closeModal: closeModal,
         editIncome: function (id) {
@@ -3439,6 +3682,7 @@
         // Import
         showImportExpenses: showImportExpenses,
         downloadSampleCsv: downloadSampleCsv,
+        showImportCreditCardExcel: showImportCreditCardExcel,
     };
 
     if (document.readyState === 'loading') {
