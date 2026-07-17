@@ -3272,6 +3272,7 @@
             'ביטוח רכב,320,fixed,insurance,2026-07-01,הראל,ביטוח חודשי,,,' + (bankAccounts.length > 0 ? bankAccounts[0].id : '') + ',bank_transfer,,,,,',
             'מקרר חדש,5400,installment,household,2026-07-10,מחסני חשמל,,' + (creditCards.length > 0 ? creditCards[0].id : '') + ',,credit,12,450,,,,',
             'הלוואה לרכב,80000,loan,loan_payment,2026-01-01,בנק הפועלים,,,' + (bankAccounts.length > 0 ? bankAccounts[0].id : '') + ',,,,1200,2030-01-01,5',
+            'ביטוח בריאות,180,fixed,insurance,2026-07-01,כללית,ביטוח חודשי,' + (creditCards.length > 0 ? creditCards[0].id : '') + ',,credit,,,,,',
             'חיסכון חודשי,1000,saving,savings,2026-07-01,,,,,' + (bankAccounts.length > 0 ? bankAccounts[0].id : '') + ',bank_transfer,,,,,',
         ];
         var csv = bom + header + '\n' + rows.join('\n') + '\n';
