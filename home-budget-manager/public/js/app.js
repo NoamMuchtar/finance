@@ -1744,15 +1744,15 @@
             if (installmentFields) installmentFields.classList.toggle('active', type === 'installment');
             if (loanFields) loanFields.classList.toggle('active', type === 'loan');
 
-            // Payment method for one_time
-            if (paymentMethodField) paymentMethodField.classList.toggle('active', type === 'one_time');
+            // Payment method for one_time and fixed
+            if (paymentMethodField) paymentMethodField.classList.toggle('active', type === 'one_time' || type === 'fixed');
 
             // Credit card: show when payment_method=credit OR type=installment
-            var showCreditCard = (type === 'one_time' && paymentMethod === 'credit') || type === 'installment';
+            var showCreditCard = ((type === 'one_time' || type === 'fixed') && paymentMethod === 'credit') || type === 'installment';
             if (creditCardField) creditCardField.classList.toggle('active', showCreditCard);
 
             // Bank account: show when payment_method=bank_transfer/check, or type=loan/saving
-            var showBankAccount = (type === 'one_time' && (paymentMethod === 'bank_transfer' || paymentMethod === 'check')) ||
+            var showBankAccount = ((type === 'one_time' || type === 'fixed') && (paymentMethod === 'bank_transfer' || paymentMethod === 'check')) ||
                 type === 'loan' || type === 'saving';
             if (bankAccountField) bankAccountField.classList.toggle('active', showBankAccount);
             if (savingAccountField) savingAccountField.classList.toggle('active', type === 'saving');
@@ -1788,7 +1788,7 @@
                 payload.allocation_id = parseInt(form.allocation_id.value);
             }
 
-            if (type === 'one_time') {
+            if (type === 'one_time' || type === 'fixed') {
                 payload.payment_method = form.payment_method.value;
                 if (payload.payment_method === 'credit' && form.credit_card_id.value) {
                     payload.credit_card_id = form.credit_card_id.value;
