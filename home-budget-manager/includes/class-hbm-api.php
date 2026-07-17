@@ -2627,22 +2627,30 @@ class HBM_API {
 
         $charges = [];
         foreach ($expenses as $exp) {
+            $has_voucher = !empty($exp->voucher_number);
+
             if ($exp->type === 'one_time') {
-                $deduction = self::get_one_time_cc_deduction_date($exp->start_date, $billing_day);
-                $deduction_month = substr($deduction, 0, 7);
-                if ($deduction_month !== $month) continue;
+                if (!$has_voucher) {
+                    $deduction = self::get_one_time_cc_deduction_date($exp->start_date, $billing_day);
+                    $deduction_month = substr($deduction, 0, 7);
+                    if ($deduction_month !== $month) continue;
+                }
             }
 
             if ($exp->type === 'installment') {
-                $months_passed = self::months_between($exp->start_date, $month_start);
-                $current_installment = $months_passed + 1;
-                if ($current_installment < 1 || $current_installment > intval($exp->total_installments)) continue;
-                $inst_amount = floatval($exp->installment_amount ?: ($exp->amount / $exp->total_installments));
+                if (!empty($exp->current_installment)) {
+                    $current_installment = intval($exp->current_installment);
+                } else {
+                    $months_passed = self::months_between($exp->start_date, $month_start);
+                    $current_installment = $months_passed + 1;
+                    if ($current_installment < 1 || $current_installment > intval($exp->total_installments)) continue;
+                }
+                $display_amount = !empty($exp->charged_amount) ? floatval($exp->charged_amount) : floatval($exp->installment_amount ?: ($exp->amount / $exp->total_installments));
                 $charges[] = [
                     'id' => intval($exp->id),
                     'title' => $exp->title,
                     'type' => $exp->type,
-                    'amount' => $inst_amount,
+                    'amount' => $display_amount,
                     'total_amount' => floatval($exp->amount),
                     'current_installment' => $current_installment,
                     'total_installments' => intval($exp->total_installments),
@@ -2650,11 +2658,12 @@ class HBM_API {
                     'category' => $exp->category,
                 ];
             } else {
+                $display_amount = !empty($exp->charged_amount) ? floatval($exp->charged_amount) : floatval($exp->amount);
                 $charges[] = [
                     'id' => intval($exp->id),
                     'title' => $exp->title,
                     'type' => $exp->type,
-                    'amount' => floatval($exp->amount),
+                    'amount' => $display_amount,
                     'total_amount' => floatval($exp->amount),
                     'current_installment' => null,
                     'total_installments' => null,
@@ -2844,17 +2853,22 @@ class HBM_API {
 
         $total = 0;
         foreach ($expenses as $exp) {
+            $has_voucher = !empty($exp->voucher_number);
             if ($exp->type === 'one_time') {
-                $deduction = self::get_one_time_cc_deduction_date($exp->start_date, $billing_day);
-                if (substr($deduction, 0, 7) !== $billing_month) continue;
-                $total += floatval($exp->amount);
+                if (!$has_voucher) {
+                    $deduction = self::get_one_time_cc_deduction_date($exp->start_date, $billing_day);
+                    if (substr($deduction, 0, 7) !== $billing_month) continue;
+                }
+                $total += !empty($exp->charged_amount) ? floatval($exp->charged_amount) : floatval($exp->amount);
             } elseif ($exp->type === 'installment') {
-                $months_passed = self::months_between($exp->start_date, $month_start);
-                $current = $months_passed + 1;
-                if ($current < 1 || $current > intval($exp->total_installments)) continue;
-                $total += floatval($exp->installment_amount ?: ($exp->amount / $exp->total_installments));
+                if (empty($exp->current_installment)) {
+                    $months_passed = self::months_between($exp->start_date, $month_start);
+                    $current = $months_passed + 1;
+                    if ($current < 1 || $current > intval($exp->total_installments)) continue;
+                }
+                $total += !empty($exp->charged_amount) ? floatval($exp->charged_amount) : floatval($exp->installment_amount ?: ($exp->amount / $exp->total_installments));
             } else {
-                $total += floatval($exp->amount);
+                $total += !empty($exp->charged_amount) ? floatval($exp->charged_amount) : floatval($exp->amount);
             }
         }
         return $total;
