@@ -1833,7 +1833,7 @@
             }
 
             var ccId = parseInt(payload.credit_card_id);
-            if (ccId && payload.start_date && !isEdit) {
+            if (ccId && payload.start_date && !isEdit && type !== 'installment') {
                 var bufferResult = checkCcBufferZone(payload.start_date, ccId);
                 if (bufferResult) {
                     showBillingCyclePrompt(payload.title, payload.start_date, bufferResult.currentMonth, bufferResult.nextMonth, function (chosenMonth) {
@@ -3277,7 +3277,7 @@
 
             var bufferRows = [];
             parsedRows.forEach(function (row, idx) {
-                if (row.credit_card_id && row.start_date && !row.cc_billing_month) {
+                if (row.credit_card_id && row.start_date && !row.cc_billing_month && row.type !== 'installment') {
                     var result = checkCcBufferZone(row.start_date, row.credit_card_id);
                     if (result) {
                         bufferRows.push({ index: idx, row: row, currentMonth: result.currentMonth, nextMonth: result.nextMonth });
