@@ -3093,6 +3093,196 @@
     }
 
     // ===================== Public API =====================
+    // ===================== CSV Import =====================
+    function showImportExpenses() {
+        var catList = Object.keys(CATEGORIES).map(function (k) {
+            return k + ' = ' + CATEGORIES[k];
+        }).join('\n');
+
+        var ccList = creditCards.map(function (c) {
+            return 'ID: ' + c.id + ' - ' + (c.card_name || '') + ' **** ' + c.last_four;
+        }).join('\n');
+
+        var baList = bankAccounts.map(function (a) {
+            return 'ID: ' + a.id + ' - ' + a.bank_name + ' ***' + a.last_three;
+        }).join('\n');
+
+        var html = '<div class="hbm-import-container" style="direction:rtl;text-align:right;">' +
+            '<div style="margin-bottom:16px;">' +
+            '<button class="hbm-btn hbm-btn-sm" onclick="hbmApp.downloadSampleCsv()">הורד קובץ לדוגמא</button>' +
+            '</div>' +
+            '<div class="hbm-import-instructions" style="background:#f8f9fa;padding:12px;border-radius:8px;margin-bottom:16px;font-size:13px;max-height:300px;overflow-y:auto;">' +
+            '<h4 style="margin:0 0 8px;">הנחיות למילוי הקובץ</h4>' +
+            '<p><strong>עמודות חובה:</strong> title (שם), amount (סכום), type (סוג), category (קטגוריה), start_date (תאריך)</p>' +
+            '<p><strong>עמודות אופציונליות:</strong> payee (למי), description (תיאור), credit_card_id, bank_account_id, payment_method, total_installments, installment_amount, monthly_return, loan_end_date, loan_payment_day</p>' +
+            '<hr style="margin:8px 0;">' +
+            '<p><strong>סוגי הוצאה (type):</strong></p>' +
+            '<ul style="margin:4px 0;padding-right:20px;">' +
+            '<li><code>one_time</code> - חד פעמי</li>' +
+            '<li><code>fixed</code> - הוצאה קבועה (חודשית חוזרת)</li>' +
+            '<li><code>installment</code> - תשלומים (חובה: total_installments)</li>' +
+            '<li><code>loan</code> - הלוואה (חובה: monthly_return, loan_end_date)</li>' +
+            '<li><code>saving</code> - חיסכון</li>' +
+            '</ul>' +
+            '<p><strong>אמצעי תשלום (payment_method):</strong> credit, bank_transfer, check, cash</p>' +
+            '<p><strong>תאריך:</strong> פורמט YYYY-MM-DD (לדוגמא: 2026-07-15)</p>' +
+            '<hr style="margin:8px 0;">' +
+            '<p><strong>קטגוריות זמינות:</strong></p>' +
+            '<pre style="font-size:11px;max-height:120px;overflow-y:auto;background:#fff;padding:8px;border-radius:4px;">' + escapeHtml(catList) + '</pre>' +
+            '<hr style="margin:8px 0;">' +
+            '<p><strong>כרטיסי אשראי (credit_card_id):</strong></p>' +
+            '<pre style="font-size:11px;background:#fff;padding:8px;border-radius:4px;">' + (ccList ? escapeHtml(ccList) : 'לא הוגדרו כרטיסים') + '</pre>' +
+            '<p><strong>חשבונות בנק (bank_account_id):</strong></p>' +
+            '<pre style="font-size:11px;background:#fff;padding:8px;border-radius:4px;">' + (baList ? escapeHtml(baList) : 'לא הוגדרו חשבונות') + '</pre>' +
+            '</div>' +
+            '<div style="margin-bottom:12px;">' +
+            '<label style="display:block;margin-bottom:4px;font-weight:bold;">בחר קובץ CSV:</label>' +
+            '<input type="file" id="hbm-import-file" accept=".csv" style="width:100%;">' +
+            '</div>' +
+            '<div id="hbm-import-preview" style="display:none;margin-bottom:12px;"></div>' +
+            '<div id="hbm-import-result" style="display:none;margin-bottom:12px;"></div>' +
+            '<div class="hbm-form-actions">' +
+            '<button class="hbm-btn hbm-btn-primary" id="hbm-import-submit" disabled>ייבא הוצאות</button>' +
+            '<button class="hbm-btn hbm-btn-ghost" onclick="hbmApp.closeModal()">ביטול</button>' +
+            '</div>' +
+            '</div>';
+
+        openModal('ייבוא הוצאות מקובץ CSV', html);
+
+        var fileInput = document.getElementById('hbm-import-file');
+        var submitBtn = document.getElementById('hbm-import-submit');
+        var parsedRows = [];
+
+        fileInput.addEventListener('change', function () {
+            var file = fileInput.files[0];
+            if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function (e) {
+                parsedRows = parseCsv(e.target.result);
+                var preview = document.getElementById('hbm-import-preview');
+                if (parsedRows.length === 0) {
+                    preview.innerHTML = '<p style="color:red;">לא נמצאו שורות תקינות בקובץ</p>';
+                    preview.style.display = 'block';
+                    submitBtn.disabled = true;
+                    return;
+                }
+                preview.innerHTML = '<p style="color:green;">נמצאו ' + parsedRows.length + ' שורות לייבוא</p>' +
+                    '<div style="max-height:150px;overflow:auto;font-size:12px;"><table class="hbm-table"><thead><tr><th>#</th><th>שם</th><th>סכום</th><th>סוג</th><th>קטגוריה</th></tr></thead><tbody>' +
+                    parsedRows.slice(0, 10).map(function (r, i) {
+                        return '<tr><td>' + (i + 1) + '</td><td>' + escapeHtml(r.title) + '</td><td>' + r.amount + '</td><td>' + r.type + '</td><td>' + (r.category || '-') + '</td></tr>';
+                    }).join('') +
+                    (parsedRows.length > 10 ? '<tr><td colspan="5">... ועוד ' + (parsedRows.length - 10) + ' שורות</td></tr>' : '') +
+                    '</tbody></table></div>';
+                preview.style.display = 'block';
+                submitBtn.disabled = false;
+            };
+            reader.readAsText(file);
+        });
+
+        submitBtn.addEventListener('click', function () {
+            if (parsedRows.length === 0) return;
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'מייבא...';
+            apiRequest('import-expenses', 'POST', { rows: parsedRows, is_business: 0 }).then(function (result) {
+                var resultDiv = document.getElementById('hbm-import-result');
+                if (result && !result.error) {
+                    var msg = '<p style="color:green;font-weight:bold;">יובאו בהצלחה: ' + result.imported + ' מתוך ' + result.total + '</p>';
+                    if (result.errors && result.errors.length > 0) {
+                        msg += '<div style="color:red;font-size:12px;max-height:100px;overflow:auto;"><ul>' +
+                            result.errors.map(function (e) { return '<li>' + escapeHtml(e) + '</li>'; }).join('') +
+                            '</ul></div>';
+                    }
+                    resultDiv.innerHTML = msg;
+                    resultDiv.style.display = 'block';
+                    if (result.imported > 0) {
+                        loadExpenses();
+                        loadDashboard();
+                    }
+                } else {
+                    resultDiv.innerHTML = '<p style="color:red;">שגיאה בייבוא</p>';
+                    resultDiv.style.display = 'block';
+                }
+                submitBtn.textContent = 'ייבא הוצאות';
+                submitBtn.disabled = false;
+            });
+        });
+    }
+
+    function parseCsv(text) {
+        var lines = text.split(/\r?\n/).filter(function (l) { return l.trim(); });
+        if (lines.length < 2) return [];
+
+        var headerLine = lines[0];
+        // Handle BOM
+        if (headerLine.charCodeAt(0) === 0xFEFF) headerLine = headerLine.slice(1);
+        var headers = headerLine.split(',').map(function (h) { return h.trim().replace(/^"|"$/g, ''); });
+
+        var rows = [];
+        for (var i = 1; i < lines.length; i++) {
+            var values = parseCsvLine(lines[i]);
+            if (values.length === 0) continue;
+            var row = {};
+            headers.forEach(function (h, idx) {
+                row[h] = values[idx] !== undefined ? values[idx].trim() : '';
+            });
+            if (row.title && row.amount) {
+                row.amount = parseFloat(row.amount) || 0;
+                if (!row.type) row.type = 'one_time';
+                rows.push(row);
+            }
+        }
+        return rows;
+    }
+
+    function parseCsvLine(line) {
+        var result = [];
+        var current = '';
+        var inQuotes = false;
+        for (var i = 0; i < line.length; i++) {
+            var ch = line[i];
+            if (inQuotes) {
+                if (ch === '"' && line[i + 1] === '"') {
+                    current += '"';
+                    i++;
+                } else if (ch === '"') {
+                    inQuotes = false;
+                } else {
+                    current += ch;
+                }
+            } else {
+                if (ch === '"') {
+                    inQuotes = true;
+                } else if (ch === ',') {
+                    result.push(current);
+                    current = '';
+                } else {
+                    current += ch;
+                }
+            }
+        }
+        result.push(current);
+        return result;
+    }
+
+    function downloadSampleCsv() {
+        var bom = '﻿';
+        var header = 'title,amount,type,category,start_date,payee,description,credit_card_id,bank_account_id,payment_method,total_installments,installment_amount,monthly_return,loan_end_date,loan_payment_day';
+        var rows = [
+            'סופר שופרסל,450,one_time,groceries,2026-07-15,שופרסל,קניות שבועיות,,,cash,,,,,',
+            'ביטוח רכב,320,fixed,insurance,2026-07-01,הראל,ביטוח חודשי,,,' + (bankAccounts.length > 0 ? bankAccounts[0].id : '') + ',bank_transfer,,,,,',
+            'מקרר חדש,5400,installment,household,2026-07-10,מחסני חשמל,,' + (creditCards.length > 0 ? creditCards[0].id : '') + ',,credit,12,450,,,,',
+            'הלוואה לרכב,80000,loan,loan_payment,2026-01-01,בנק הפועלים,,,' + (bankAccounts.length > 0 ? bankAccounts[0].id : '') + ',,,,1200,2030-01-01,5',
+            'חיסכון חודשי,1000,saving,savings,2026-07-01,,,,,' + (bankAccounts.length > 0 ? bankAccounts[0].id : '') + ',bank_transfer,,,,,',
+        ];
+        var csv = bom + header + '\n' + rows.join('\n') + '\n';
+        var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        var link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'expenses_sample.csv';
+        link.click();
+        URL.revokeObjectURL(link.href);
+    }
+
     window.hbmApp = {
         closeModal: closeModal,
         editIncome: function (id) {
@@ -3245,6 +3435,9 @@
         addBusinessBankAccount: addBusinessBankAccount,
         editBusinessBankAccount: editBusinessBankAccount,
         deleteBusinessBankAccount: deleteBusinessBankAccount,
+        // Import
+        showImportExpenses: showImportExpenses,
+        downloadSampleCsv: downloadSampleCsv,
     };
 
     if (document.readyState === 'loading') {

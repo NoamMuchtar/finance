@@ -156,7 +156,10 @@ if (!defined('ABSPATH')) {
         <section id="hbm-page-expenses" class="hbm-page">
             <div class="hbm-page-header">
                 <h2>הוצאות</h2>
-                <button class="hbm-btn hbm-btn-primary" id="hbm-add-expense">+ הוסף הוצאה</button>
+                <div style="display:flex;gap:8px;">
+                    <button class="hbm-btn hbm-btn-primary" id="hbm-add-expense">+ הוסף הוצאה</button>
+                    <button class="hbm-btn" onclick="hbmApp.showImportExpenses()">ייבוא CSV</button>
+                </div>
             </div>
             <div class="hbm-tabs" id="hbm-expense-tabs">
                 <button class="hbm-tab active" data-type="all">הכל</button>

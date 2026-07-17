@@ -179,6 +179,11 @@ class HBM_API {
             ['methods' => 'GET', 'callback' => [__CLASS__, 'get_bank_balances'], 'permission_callback' => [__CLASS__, 'check_auth']],
         ]);
 
+        // Import Expenses CSV
+        register_rest_route($namespace, '/import-expenses', [
+            ['methods' => 'POST', 'callback' => [__CLASS__, 'import_expenses_csv'], 'permission_callback' => [__CLASS__, 'check_auth']],
+        ]);
+
         // Current User Info
         register_rest_route($namespace, '/current-user', [
             ['methods' => 'GET', 'callback' => [__CLASS__, 'get_current_user_info'], 'permission_callback' => [__CLASS__, 'check_auth']],
@@ -562,6 +567,137 @@ class HBM_API {
         }
 
         return rest_ensure_response($data);
+    }
+
+    public static function import_expenses_csv($request) {
+        global $wpdb;
+        $user_id = get_current_user_id();
+
+        $params = $request->get_json_params();
+        if (empty($params) || empty($params['rows']) || !is_array($params['rows'])) {
+            return new WP_Error('missing_data', 'חסרים נתונים לייבוא', ['status' => 400]);
+        }
+
+        $valid_types = ['one_time', 'fixed', 'installment', 'loan', 'saving'];
+        $valid_payments = ['credit', 'bank_transfer', 'check', 'cash'];
+        $categories = get_option('hbm_categories', []);
+        $is_business = intval($params['is_business'] ?? 0);
+
+        $imported = 0;
+        $errors = [];
+
+        foreach ($params['rows'] as $i => $row) {
+            $row_num = $i + 1;
+            $title = sanitize_text_field(trim($row['title'] ?? ''));
+            $amount = floatval($row['amount'] ?? 0);
+            $type = sanitize_text_field(trim($row['type'] ?? 'one_time'));
+            $category = sanitize_text_field(trim($row['category'] ?? ''));
+            $start_date = sanitize_text_field(trim($row['start_date'] ?? ''));
+            $payee = sanitize_text_field(trim($row['payee'] ?? ''));
+            $description = sanitize_text_field(trim($row['description'] ?? ''));
+
+            if (empty($title)) {
+                $errors[] = 'שורה ' . $row_num . ': חסר שם הוצאה';
+                continue;
+            }
+            if ($amount <= 0) {
+                $errors[] = 'שורה ' . $row_num . ': סכום חייב להיות גדול מ-0';
+                continue;
+            }
+            if (!in_array($type, $valid_types)) {
+                $errors[] = 'שורה ' . $row_num . ': סוג לא תקין "' . $type . '"';
+                continue;
+            }
+            if ($type !== 'loan' && empty($category)) {
+                $errors[] = 'שורה ' . $row_num . ': חסרה קטגוריה';
+                continue;
+            }
+            if (!empty($category) && !isset($categories[$category])) {
+                $errors[] = 'שורה ' . $row_num . ': קטגוריה לא קיימת "' . $category . '"';
+                continue;
+            }
+            if (empty($start_date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $start_date)) {
+                $errors[] = 'שורה ' . $row_num . ': תאריך לא תקין (נדרש YYYY-MM-DD)';
+                continue;
+            }
+
+            $data = [
+                'user_id' => $user_id,
+                'type' => $type,
+                'title' => $title,
+                'payee' => $payee,
+                'description' => $description,
+                'category' => $type === 'loan' && empty($category) ? 'loan_payment' : $category,
+                'amount' => $amount,
+                'is_recurring' => 0,
+                'start_date' => $start_date,
+            ];
+
+            if ($is_business) {
+                $data['is_business'] = 1;
+            }
+
+            $credit_card_id = !empty($row['credit_card_id']) ? intval($row['credit_card_id']) : null;
+            if ($credit_card_id) {
+                $data['credit_card_id'] = $credit_card_id;
+            }
+
+            $bank_account_id = !empty($row['bank_account_id']) ? intval($row['bank_account_id']) : null;
+            if ($bank_account_id) {
+                $data['bank_account_id'] = $bank_account_id;
+            }
+
+            $payment_method = sanitize_text_field(trim($row['payment_method'] ?? ''));
+            if (!empty($payment_method) && in_array($payment_method, $valid_payments)) {
+                $data['payment_method'] = $payment_method;
+            }
+
+            switch ($type) {
+                case 'fixed':
+                case 'saving':
+                    $data['is_recurring'] = 1;
+                    break;
+
+                case 'installment':
+                    $total = intval($row['total_installments'] ?? 0);
+                    if ($total <= 0) $total = 1;
+                    $data['total_installments'] = $total;
+                    $data['remaining_installments'] = $total;
+                    $inst_amount = floatval($row['installment_amount'] ?? 0);
+                    $data['installment_amount'] = $inst_amount > 0 ? $inst_amount : ($amount / $total);
+                    $data['end_date'] = date('Y-m-d', strtotime($start_date . " +{$total} months"));
+                    break;
+
+                case 'loan':
+                    $data['monthly_return'] = floatval($row['monthly_return'] ?? 0);
+                    $loan_end = sanitize_text_field(trim($row['loan_end_date'] ?? ''));
+                    if ($loan_end) {
+                        $data['loan_end_date'] = $loan_end;
+                        $data['end_date'] = $loan_end;
+                    }
+                    if (!empty($row['loan_payment_day'])) {
+                        $data['loan_payment_day'] = intval($row['loan_payment_day']);
+                    }
+                    break;
+            }
+
+            if ($type === 'one_time' && empty($data['payment_method'])) {
+                $data['payment_method'] = $credit_card_id ? 'credit' : 'cash';
+            }
+
+            $result = $wpdb->insert("{$wpdb->prefix}hbm_expenses", $data);
+            if ($result === false) {
+                $errors[] = 'שורה ' . $row_num . ': שגיאת מסד נתונים';
+            } else {
+                $imported++;
+            }
+        }
+
+        return rest_ensure_response([
+            'imported' => $imported,
+            'total' => count($params['rows']),
+            'errors' => $errors,
+        ]);
     }
 
     public static function update_expense($request) {
