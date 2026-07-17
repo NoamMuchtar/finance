@@ -1818,17 +1818,110 @@
                 }
             }
 
-            var method = isEdit ? 'PUT' : 'POST';
-            var endpoint = isEdit ? 'expenses/' + editData.id : 'expenses';
-            apiRequest(endpoint, method, payload).then(function (response) {
-                if (response && (response.id || response.success)) {
-                    closeModal();
-                    loadExpenses();
-                    loadDashboard();
-                } else {
-                    alert('שגיאה בשמירת הוצאה: ' + (response && response.message ? response.message : 'שגיאה לא ידועה'));
+            function submitExpense(finalPayload) {
+                var method = isEdit ? 'PUT' : 'POST';
+                var endpoint = isEdit ? 'expenses/' + editData.id : 'expenses';
+                apiRequest(endpoint, method, finalPayload).then(function (response) {
+                    if (response && (response.id || response.success)) {
+                        closeModal();
+                        loadExpenses();
+                        loadDashboard();
+                    } else {
+                        alert('שגיאה בשמירת הוצאה: ' + (response && response.message ? response.message : 'שגיאה לא ידועה'));
+                    }
+                });
+            }
+
+            var ccId = parseInt(payload.credit_card_id);
+            if (ccId && payload.start_date && !isEdit) {
+                var bufferResult = checkCcBufferZone(payload.start_date, ccId);
+                if (bufferResult) {
+                    showBillingCyclePrompt(payload.title, payload.start_date, bufferResult.currentMonth, bufferResult.nextMonth, function (chosenMonth) {
+                        payload.cc_billing_month = chosenMonth;
+                        submitExpense(payload);
+                    });
+                    return;
                 }
+            }
+            submitExpense(payload);
+        });
+    }
+
+    function checkCcBufferZone(dateStr, creditCardId) {
+        var card = creditCards.find(function (c) { return c.id == creditCardId; });
+        if (!card) return null;
+        var billingDay = parseInt(card.billing_day);
+        if (!billingDay) return null;
+        var dt = new Date(dateStr);
+        var expDay = dt.getDate();
+        var cutoffDay = billingDay - 2;
+        if (expDay > cutoffDay && expDay <= billingDay) {
+            var currentMonth = dateStr.substring(0, 7);
+            var nextDt = new Date(dt.getFullYear(), dt.getMonth() + 1, 1);
+            var nextMonth = nextDt.getFullYear() + '-' + String(nextDt.getMonth() + 1).padStart(2, '0');
+            return { currentMonth: currentMonth, nextMonth: nextMonth };
+        }
+        return null;
+    }
+
+    function showBillingCyclePrompt(title, date, currentMonth, nextMonth, callback) {
+        var hebrewMonths = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+        function formatMonth(m) {
+            var parts = m.split('-');
+            return hebrewMonths[parseInt(parts[1]) - 1] + ' ' + parts[0];
+        }
+        var html = '<div style="direction:rtl;text-align:right;padding:8px;">' +
+            '<p style="margin-bottom:12px;">העסקה <strong>' + escapeHtml(title) + '</strong> בתאריך <strong>' + date + '</strong> נמצאת בטווח ימי העיבוד של חברת האשראי.</p>' +
+            '<p style="margin-bottom:16px;">לאיזה מחזור חיוב להכניס?</p>' +
+            '<div style="display:flex;gap:12px;justify-content:center;">' +
+            '<button class="hbm-btn hbm-btn-primary" id="hbm-billing-current">' + formatMonth(currentMonth) + ' (נוכחי)</button>' +
+            '<button class="hbm-btn hbm-btn-secondary" id="hbm-billing-next">' + formatMonth(nextMonth) + ' (הבא)</button>' +
+            '</div></div>';
+        openModal('בחירת מחזור חיוב', html);
+        document.getElementById('hbm-billing-current').addEventListener('click', function () {
+            closeModal();
+            callback(currentMonth);
+        });
+        document.getElementById('hbm-billing-next').addEventListener('click', function () {
+            closeModal();
+            callback(nextMonth);
+        });
+    }
+
+    function showCsvBillingCyclePrompt(bufferRows, callback) {
+        var hebrewMonths = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+        function formatMonth(m) {
+            var parts = m.split('-');
+            return hebrewMonths[parseInt(parts[1]) - 1] + ' ' + parts[0];
+        }
+        var html = '<div style="direction:rtl;text-align:right;padding:8px;">' +
+            '<p style="margin-bottom:12px;">נמצאו <strong>' + bufferRows.length + '</strong> עסקאות בטווח ימי העיבוד של חברת האשראי.</p>' +
+            '<p style="margin-bottom:12px;">בחר לאיזה מחזור חיוב להכניס כל עסקה:</p>' +
+            '<div style="max-height:300px;overflow-y:auto;margin-bottom:16px;">' +
+            '<table class="hbm-table" style="font-size:13px;"><thead><tr><th>עסקה</th><th>תאריך</th><th>סכום</th><th>מחזור חיוב</th></tr></thead><tbody>';
+        bufferRows.forEach(function (item, i) {
+            html += '<tr><td>' + escapeHtml(item.row.title) + '</td><td>' + item.row.start_date + '</td><td>' + (item.row.amount || '') + '</td>' +
+                '<td><select id="hbm-buffer-cycle-' + i + '" style="width:100%;">' +
+                '<option value="' + item.nextMonth + '">' + formatMonth(item.nextMonth) + ' (הבא)</option>' +
+                '<option value="' + item.currentMonth + '">' + formatMonth(item.currentMonth) + ' (נוכחי)</option>' +
+                '</select></td></tr>';
+        });
+        html += '</tbody></table></div>' +
+            '<div class="hbm-form-actions">' +
+            '<button class="hbm-btn hbm-btn-primary" id="hbm-buffer-confirm">אישור</button>' +
+            '<button class="hbm-btn hbm-btn-ghost" id="hbm-buffer-cancel">ביטול</button>' +
+            '</div></div>';
+        openModal('בחירת מחזור חיוב - עסקאות בטווח עיבוד', html);
+        document.getElementById('hbm-buffer-confirm').addEventListener('click', function () {
+            bufferRows.forEach(function (item, i) {
+                var select = document.getElementById('hbm-buffer-cycle-' + i);
+                item.row.cc_billing_month = select.value;
             });
+            closeModal();
+            callback();
+        });
+        document.getElementById('hbm-buffer-cancel').addEventListener('click', function () {
+            closeModal();
         });
     }
 
@@ -3181,30 +3274,51 @@
 
         submitBtn.addEventListener('click', function () {
             if (parsedRows.length === 0) return;
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'מייבא...';
-            apiRequest('import-expenses', 'POST', { rows: parsedRows, is_business: 0 }).then(function (result) {
-                var resultDiv = document.getElementById('hbm-import-result');
-                if (result && !result.error) {
-                    var msg = '<p style="color:green;font-weight:bold;">יובאו בהצלחה: ' + result.imported + ' מתוך ' + result.total + '</p>';
-                    if (result.errors && result.errors.length > 0) {
-                        msg += '<div style="color:red;font-size:12px;max-height:100px;overflow:auto;"><ul>' +
-                            result.errors.map(function (e) { return '<li>' + escapeHtml(e) + '</li>'; }).join('') +
-                            '</ul></div>';
+
+            var bufferRows = [];
+            parsedRows.forEach(function (row, idx) {
+                if (row.credit_card_id && row.start_date && !row.cc_billing_month) {
+                    var result = checkCcBufferZone(row.start_date, row.credit_card_id);
+                    if (result) {
+                        bufferRows.push({ index: idx, row: row, currentMonth: result.currentMonth, nextMonth: result.nextMonth });
                     }
-                    resultDiv.innerHTML = msg;
-                    resultDiv.style.display = 'block';
-                    if (result.imported > 0) {
-                        loadExpenses();
-                        loadDashboard();
-                    }
-                } else {
-                    resultDiv.innerHTML = '<p style="color:red;">שגיאה בייבוא</p>';
-                    resultDiv.style.display = 'block';
                 }
-                submitBtn.textContent = 'ייבא הוצאות';
-                submitBtn.disabled = false;
             });
+
+            if (bufferRows.length > 0) {
+                showCsvBillingCyclePrompt(bufferRows, function () {
+                    doImport();
+                });
+            } else {
+                doImport();
+            }
+
+            function doImport() {
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'מייבא...';
+                apiRequest('import-expenses', 'POST', { rows: parsedRows, is_business: 0 }).then(function (result) {
+                    var resultDiv = document.getElementById('hbm-import-result');
+                    if (result && !result.error) {
+                        var msg = '<p style="color:green;font-weight:bold;">יובאו בהצלחה: ' + result.imported + ' מתוך ' + result.total + '</p>';
+                        if (result.errors && result.errors.length > 0) {
+                            msg += '<div style="color:red;font-size:12px;max-height:100px;overflow:auto;"><ul>' +
+                                result.errors.map(function (e) { return '<li>' + escapeHtml(e) + '</li>'; }).join('') +
+                                '</ul></div>';
+                        }
+                        resultDiv.innerHTML = msg;
+                        resultDiv.style.display = 'block';
+                        if (result.imported > 0) {
+                            loadExpenses();
+                            loadDashboard();
+                        }
+                    } else {
+                        resultDiv.innerHTML = '<p style="color:red;">שגיאה בייבוא</p>';
+                        resultDiv.style.display = 'block';
+                    }
+                    submitBtn.textContent = 'ייבא הוצאות';
+                    submitBtn.disabled = false;
+                });
+            }
         });
     }
 

@@ -490,6 +490,11 @@ class HBM_API {
             $data['payment_method'] = sanitize_text_field($params['payment_method']);
         }
 
+        // Handle cc_billing_month
+        if (!empty($params['cc_billing_month'])) {
+            $data['cc_billing_month'] = sanitize_text_field($params['cc_billing_month']);
+        }
+
         switch ($type) {
             case 'fixed':
                 $data['is_recurring'] = 1;
@@ -659,6 +664,11 @@ class HBM_API {
 
             if (!empty($voucher_number)) {
                 $data['voucher_number'] = $voucher_number;
+            }
+
+            $cc_billing_month = sanitize_text_field(trim($row['cc_billing_month'] ?? ''));
+            if (!empty($cc_billing_month)) {
+                $data['cc_billing_month'] = $cc_billing_month;
             }
 
             if ($is_business) {
@@ -2618,18 +2628,24 @@ class HBM_API {
         $query = $wpdb->prepare(
             "SELECT * FROM {$wpdb->prefix}hbm_expenses
              WHERE credit_card_id = %d
-             AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)
+             AND (
+                 (start_date <= %s AND (end_date IS NULL OR end_date >= %s))
+                 OR cc_billing_month = %s
+             )
              ORDER BY start_date ASC",
-            $credit_card_id, $month_end, $month_start
+            $credit_card_id, $month_end, $month_start, $month
         );
 
         $expenses = $wpdb->get_results($query);
 
         $charges = [];
         foreach ($expenses as $exp) {
+            $has_explicit_billing = !empty($exp->cc_billing_month);
             $has_voucher = !empty($exp->voucher_number);
 
-            if ($exp->type === 'one_time') {
+            if ($has_explicit_billing) {
+                if ($exp->cc_billing_month !== $month) continue;
+            } elseif ($exp->type === 'one_time') {
                 if (!$has_voucher) {
                     $deduction = self::get_one_time_cc_deduction_date($exp->start_date, $billing_day);
                     $deduction_month = substr($deduction, 0, 7);
@@ -2843,8 +2859,11 @@ class HBM_API {
 
         $query = "SELECT * FROM {$wpdb->prefix}hbm_expenses
              WHERE credit_card_id = %d
-             AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)";
-        $args = [$card_id, $month_end, $month_start];
+             AND (
+                 (start_date <= %s AND (end_date IS NULL OR end_date >= %s))
+                 OR cc_billing_month = %s
+             )";
+        $args = [$card_id, $month_end, $month_start, $billing_month];
         if ($filter_business) {
             $query .= " AND is_business = %d";
             $args[] = $is_business_val;
@@ -2853,12 +2872,19 @@ class HBM_API {
 
         $total = 0;
         foreach ($expenses as $exp) {
+            $has_explicit_billing = !empty($exp->cc_billing_month);
             $has_voucher = !empty($exp->voucher_number);
-            if ($exp->type === 'one_time') {
+
+            if ($has_explicit_billing) {
+                if ($exp->cc_billing_month !== $billing_month) continue;
+            } elseif ($exp->type === 'one_time') {
                 if (!$has_voucher) {
                     $deduction = self::get_one_time_cc_deduction_date($exp->start_date, $billing_day);
                     if (substr($deduction, 0, 7) !== $billing_month) continue;
                 }
+            }
+
+            if ($exp->type === 'one_time' || $exp->type === 'fixed') {
                 $total += !empty($exp->charged_amount) ? floatval($exp->charged_amount) : floatval($exp->amount);
             } elseif ($exp->type === 'installment') {
                 if (empty($exp->current_installment)) {
@@ -2879,8 +2905,7 @@ class HBM_API {
         $exp_year = intval(date('Y', strtotime($expense_start_date)));
         $exp_month = intval(date('m', strtotime($expense_start_date)));
 
-        $cutoff_day = $billing_day - 2;
-        if ($exp_day <= $cutoff_day) {
+        if ($exp_day <= $billing_day) {
             return sprintf('%04d-%02d-%02d', $exp_year, $exp_month, $billing_day);
         } else {
             $next = new DateTime($expense_start_date);

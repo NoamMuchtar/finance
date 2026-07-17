@@ -56,6 +56,7 @@ class HBM_Database {
             allocation_id bigint(20) unsigned DEFAULT NULL,
             saving_account_id bigint(20) unsigned DEFAULT NULL,
             voucher_number varchar(50) DEFAULT NULL,
+            cc_billing_month varchar(7) DEFAULT NULL,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -316,6 +317,12 @@ class HBM_Database {
         $col = $wpdb->get_results("SHOW COLUMNS FROM {$table} LIKE 'voucher_number'");
         if (empty($col)) {
             $wpdb->query("ALTER TABLE {$table} ADD COLUMN voucher_number varchar(50) DEFAULT NULL AFTER saving_account_id");
+        }
+
+        // Add cc_billing_month to expenses if not exists
+        $col = $wpdb->get_results("SHOW COLUMNS FROM {$table} LIKE 'cc_billing_month'");
+        if (empty($col)) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN cc_billing_month varchar(7) DEFAULT NULL AFTER voucher_number");
         }
 
         // Alter budget_allocations: add label if not exists
