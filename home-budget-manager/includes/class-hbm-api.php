@@ -2879,7 +2879,8 @@ class HBM_API {
         $exp_year = intval(date('Y', strtotime($expense_start_date)));
         $exp_month = intval(date('m', strtotime($expense_start_date)));
 
-        if ($exp_day <= $billing_day) {
+        $cutoff_day = $billing_day - 2;
+        if ($exp_day <= $cutoff_day) {
             return sprintf('%04d-%02d-%02d', $exp_year, $exp_month, $billing_day);
         } else {
             $next = new DateTime($expense_start_date);
